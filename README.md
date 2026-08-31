@@ -11,6 +11,17 @@ One integrated system with three connected parts:
 
 ## Delivery order
 
+The system numbering describes the three final capabilities. The implementation order is different:
+
+1. **Build Project 3 first:** finish the scanned-PDF parallel-corpus builder and produce a reviewed,
+   validated dataset.
+2. **Build Project 1 second:** connect the selected translation model and later fine-tune it using
+   an approved dataset version.
+3. **Build Project 2 third:** index only approved bilingual passages for search and cited answers.
+
+This corpus-first order prevents the translation and retrieval systems from depending on an
+unfinished or untraceable dataset.
+
 ### Project 1 — Amharic-to-English legal-scope machine translation
 
 Build the first translation service with:
@@ -50,6 +61,20 @@ scores remain separate. Unreviewed output is never automatically published or in
 Approved corpus-builder exports can be added to Project 2's bilingual index. All three capabilities
 share one web application, FastAPI backend, validation rules, storage boundary, and generated-content
 labels.
+
+## Current implementation priority: Project 3
+
+The student team should finish the corpus builder through small reviewed branches:
+
+1. `feature/corpus-schema` — canonical row schema, source inventory, legacy import, validation.
+2. `feature/pdf-ingestion` — safe paired-PDF upload, checksums, and ordered page rendering.
+3. `feature/bilingual-ocr` — replaceable Amharic and English OCR providers and page metadata.
+4. `feature/page-alignment` — normalization and explainable page/passage alignment proposals.
+5. `feature/alignment-review` — side-by-side review, correction, and review status workflow.
+6. `feature/corpus-export` — deterministic JSONL, compatibility export, and SHA-256 manifest.
+
+Do not begin with real private PDFs. Build and test each stage using synthetic or clearly public
+fixtures. The local corpus and uploaded documents remain outside Git.
 
 See [PLAN.md](PLAN.md) for the architecture, task dependencies, milestone gates, API contracts, and
 today's work checklist. See [REQUIREMENTS.md](REQUIREMENTS.md) for acceptance requirements.
@@ -162,18 +187,16 @@ content length, and UTC timestamp without duplicating full conversation text.
 The MVP intentionally has no delete or audit-edit endpoint. Before public deployment, add user
 authentication, ownership checks, a documented retention policy, and an authorized deletion flow.
 
-## Ten things to do today
+## What to do next
 
-1. Assign contributors to tasks A0-01 through A0-03 and identify overlapping files.
-2. Create a `feature/mt-rag-foundation` branch in a Git-enabled workspace.
-3. Scaffold React, TypeScript, Vite, and Tailwind CSS v4 under `frontend/`.
-4. Create the FastAPI application and a tested `GET /health` endpoint.
-5. Add environment-based settings for API URL, database URL, corpus path, and model ID/revision.
-6. Define Pydantic contracts for `/v1/translate`, `/v1/search`, and `/v1/answer`.
-7. Add safe synthetic Amharic-English fixtures without copying private corpus rows into Git.
-8. Implement a streaming validator for the existing `id`/`am`/`en` JSONL shape.
-9. Create Translate, Search, and Ask pages connected to mocked typed API responses.
-10. Run backend tests, Ruff, compile checks, and the frontend build; record only actual results.
+1. Merge the current foundation/documentation pull request into `main`.
+2. Update local `main` and create `feature/corpus-schema`.
+3. Assign A1-01 and finalize schema, IDs, provenance, source types, and review states.
+4. Add schema tests using synthetic Amharic-English fixtures only.
+5. Map the existing `id`/`am`/`en` format into canonical review records without committing its text.
+6. Review and merge the schema branch before beginning PDF ingestion.
+
+The complete Project 3 checklist is in [PLAN.md](PLAN.md#8-how-to-finish-project-3).
 
 ## Collaboration and completion
 
@@ -188,12 +211,15 @@ authentication, ownership checks, a documented retention policy, and an authoriz
 
 Build the MVP through small reviewed branches in this order:
 
-1. `feature/mt-rag-foundation`
-2. `feature/translation-service`
-3. `feature/bilingual-rag`
-4. `feature/corpus-builder`
-5. `feature/corpus-rag-integration`
-6. `chore/mvp-local-release`
+1. `feature/corpus-schema`
+2. `feature/pdf-ingestion`
+3. `feature/bilingual-ocr`
+4. `feature/page-alignment`
+5. `feature/alignment-review`
+6. `feature/corpus-export`
+7. `feature/translation-service`
+8. `feature/bilingual-rag`
+9. `chore/mvp-local-release`
 
 Each branch starts from updated `main`, covers one reviewable task group, uses Conventional Commits,
 passes its relevant checks, and merges through student review. Inspect every diff for private corpus

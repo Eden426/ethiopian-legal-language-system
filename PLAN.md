@@ -9,8 +9,8 @@ integrated web system with three connected capabilities:
 3. a scanned-PDF parallel-corpus builder.
 
 Model fine-tuning, accuracy improvement, benchmarking, and other research work are intentionally
-deferred. The first delivery priority is a usable combined MT and RAG application. The corpus
-builder follows as the second project and feeds improved reviewed data back into the first.
+deferred. The first delivery priority is Project 3, the scanned-PDF parallel-corpus builder. Its
+reviewed, validated output will feed Project 1 translation work and Project 2 bilingual RAG.
 
 > All generated translations, alignments, and answers are non-official output and are not legal
 > advice. A contributor must review automatically extracted or aligned text before it is marked
@@ -20,13 +20,14 @@ builder follows as the second project and feeds improved reviewed data back into
 
 | Priority | System | First usable outcome | Deferred work |
 | --- | --- | --- | --- |
-| P0 | MT and bilingual RAG | One web application translates Amharic to English, searches the existing bilingual JSONL, and returns cited evidence or abstains | LoRA training, model comparison, accuracy and ranking tuning |
-| P1 | Scanned-PDF corpus builder | A user uploads paired Amharic and English PDFs, reviews extracted and aligned pages/passages, and downloads validated JSONL | advanced layout models, automatic acceptance, large-scale processing |
-| P2 | Corpus-to-RAG integration | Approved corpus-builder exports can be added to the search index without changing the MT/RAG API | automatic publication and large-scale indexing |
+| P0 | Project 3: scanned-PDF corpus builder | A user uploads paired Amharic and English PDFs, reviews extracted and aligned pages/passages, and downloads validated JSONL | advanced layout models, automatic acceptance, large-scale processing |
+| P1 | Project 1: machine translation | The application translates Amharic to English through the selected base model and can later load an adapter | LoRA training, model comparison, accuracy tuning |
+| P2 | Project 2: bilingual retrieval and RAG | Approved bilingual passages support search, citations, and answers that abstain when evidence is weak | ranking optimization and large-scale indexing |
 | P3 | Integrated MVP | One local web application and API serve all three systems | authentication, public hosting, production scaling, and additional languages |
 
-P0 starts with the existing `id`/`am`/`en` JSONL so MT and RAG do not wait for the corpus builder.
-P1 then creates richer reviewed records, and P2 connects those records to the existing index.
+P0 is now the critical path. The existing `id`/`am`/`en` JSONL is an input to validate and migrate,
+not an automatically accepted final dataset. P1 and P2 begin only after a versioned P0 export passes
+schema, review-status, row-count, checksum, and document-leakage checks.
 
 ## 2. Product boundaries
 
@@ -111,16 +112,7 @@ not MVP dependencies. Add them later only when local usage, data size, or multip
 
 ### Main workflow
 
-#### Project 1: MT and bilingual RAG
-
-1. Import and validate the existing `id`/`am`/`en` JSONL without committing private data.
-2. Convert valid rows into internal bilingual passage records with stable citation IDs.
-3. Index both languages for keyword and bilingual vector retrieval.
-4. Translate Amharic input with the selected NLLB model through `POST /v1/translate`.
-5. Retrieve ranked evidence for Amharic or English queries through `POST /v1/search`.
-6. Return a cited answer only when the configured evidence rule is satisfied; otherwise abstain.
-
-#### Project 2: scanned-PDF parallel-corpus builder
+#### Project 3 first: scanned-PDF parallel-corpus builder
 
 1. The user creates a corpus job and uploads the Amharic and English PDFs.
 2. The API stores uploads privately, records checksums, and queues processing.
@@ -133,9 +125,23 @@ not MVP dependencies. Add them later only when local usage, data size, or multip
    `accepted`, `review`, or `rejected`.
 8. Export includes only the requested review states, validates every row, sorts deterministically,
    writes JSONL, and creates its checksum manifest.
-9. Accepted passages may be promoted to Project 1's search index. Unreviewed output is never indexed by
+9. Accepted passages may be promoted to Project 2's search index. Unreviewed output is never indexed by
    default.
 10. Translation can use accepted corpus data later when the separate fine-tuning task begins.
+
+#### Project 1 second: machine translation
+
+1. Load only an explicitly selected and pinned NLLB model revision.
+2. Translate Amharic input through `POST /v1/translate` while preserving request IDs.
+3. Label generated output as non-official and record the exact model revision.
+4. Keep the base-model interface compatible with a future adapter.
+
+#### Project 2 third: bilingual retrieval and RAG
+
+1. Import only accepted, versioned corpus-builder records with stable citation IDs.
+2. Index both languages for keyword and bilingual vector retrieval.
+3. Retrieve ranked evidence for Amharic or English queries through `POST /v1/search`.
+4. Return a cited answer only when the configured evidence rule is satisfied; otherwise abstain.
 
 ## 4. Data contracts
 
@@ -220,21 +226,21 @@ means the task has enough definition to begin. No implementation task is marked 
 
 | ID | Priority | Task | Student team | Files | Depends on | Status | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A0-01 | P0 | Scaffold React, Vite, Tailwind CSS v4, and FastAPI with health checks | student team | `frontend/`, `src/api/`, `tests/` | none | done | Vite started; production build passed; `/health` returned `ok`; 2 Pytest tests passed; scoped Ruff and compile checks passed |
-| A0-02 | P0 | Define translation, search, answer, citation, and error contracts | student team | `src/api/`, `src/mt/`, `src/rag/`, `tests/` | A0-01 | done | strict Pydantic contracts and OpenAPI routes tested for validation and safe not-ready responses |
-| A0-03 | P0 | Add safe configuration and legacy JSONL import/validation | student team | `src/common/`, `src/rag/`, `scripts/`, `tests/` | A0-02 | done | settings tests passed; malformed/duplicate tests passed; private sample: 19,292/19,292 structurally valid rows |
-| A0-04 | P0 | Implement CPU-safe lazy loading for pinned NLLB-200 distilled 600M | unassigned | `src/mt/`, `configs/`, `tests/` | A0-02 | planned | import is offline; authorized smoke test records exact revision |
-| A0-05 | P0 | Implement bilingual indexing, search, citations, and abstention | unassigned | `src/rag/`, `src/api/`, `scripts/`, `tests/` | A0-03 | planned | both languages retrieve traceable passages; weak evidence abstains |
-| A0-06 | P0 | Build translation and search/answer pages | student team | `frontend/`, `src/api/`, `tests/` | A0-04, A0-05 | in_progress | integrated mock UI handles loading/errors, citations, and warnings; build passed; real model/index connections remain |
-| A0-07 | P0 | Persist categorized conversation history and append-only audit events | student team | `src/history/`, `src/api/`, `tests/` | A0-02 | done | SQLite/API tests prove ordered history, fixed `legal_language` category, and content-safe audit records |
-| A1-01 | P1 | Confirm canonical corpus schema, review states, and legacy mapping | unassigned | `src/corpus/`, `tests/`, `docs/DATASET_CARD.md` | A0-03 | planned | schema tests validate canonical and legacy rows without private fixtures |
-| A1-02 | P1 | Define private local artifact storage, background tasks, retention, and job states | unassigned | `src/common/`, `src/api/`, `configs/`, `tests/` | A1-01 | planned | configuration and state-transition tests pass |
-| A1-03 | P1 | Implement safe paired-PDF upload and queued job status API | unassigned | `src/api/`, `src/corpus/ingestion/`, `tests/` | A1-02 | planned | invalid, oversized, malformed, and mismatched inputs fail safely |
-| A1-04 | P1 | Render PDFs into ordered page images and record artifact checksums | unassigned | `src/corpus/ingestion/`, `scripts/`, `tests/` | A1-03 | planned | synthetic PDF integration test preserves order and page count |
-| A1-05 | P1 | Add replaceable Amharic and English OCR providers | unassigned | `src/corpus/ocr/`, `configs/`, `tests/` | A1-04 | planned | offline provider-contract tests and reviewed public sample smoke test |
-| A1-06 | P1 | Implement non-destructive normalization and alignment proposals | unassigned | `src/corpus/normalization/`, `src/corpus/alignment/`, `tests/` | A1-01, A1-05 | planned | Unicode, numeric, duplicate, mixed-script, and ratio tests pass |
-| A1-07 | P1 | Build side-by-side page/alignment review workspace | unassigned | `frontend/`, `src/api/`, `tests/` | A1-06 | planned | reviewer can edit and set review status without losing originals |
-| A1-08 | P1 | Implement deterministic canonical and legacy JSONL exports | unassigned | `src/corpus/export/`, `src/api/`, `scripts/`, `tests/` | A1-07 | planned | schema, order, row count, UTF-8, and SHA-256 tests pass |
+| A0-01 | Foundation | Scaffold React, Vite, Tailwind CSS v4, and FastAPI with health checks | student team | `frontend/`, `src/api/`, `tests/` | none | done | Vite started; production build passed; `/health` returned `ok`; 2 Pytest tests passed; scoped Ruff and compile checks passed |
+| A0-02 | Foundation | Define translation, search, answer, citation, and error contracts | student team | `src/api/`, `src/mt/`, `src/rag/`, `tests/` | A0-01 | done | strict Pydantic contracts and OpenAPI routes tested for validation and safe not-ready responses |
+| A0-03 | Foundation | Add safe configuration and legacy JSONL import/validation | student team | `src/common/`, `src/rag/`, `scripts/`, `tests/` | A0-02 | done | settings tests passed; malformed/duplicate tests passed; private sample: 19,292/19,292 structurally valid rows |
+| A0-04 | P1 | Implement CPU-safe lazy loading for pinned NLLB-200 distilled 600M | unassigned | `src/mt/`, `configs/`, `tests/` | A1-08, A0-02 | deferred | import is offline; authorized smoke test records exact revision |
+| A0-05 | P2 | Implement bilingual indexing, search, citations, and abstention | unassigned | `src/rag/`, `src/api/`, `scripts/`, `tests/` | A1-08 | deferred | both languages retrieve traceable passages; weak evidence abstains |
+| A0-06 | P3 | Connect translation and search/answer pages | student team | `frontend/`, `src/api/`, `tests/` | A0-04, A0-05 | deferred | integrated mock UI exists; real model/index connections wait for approved corpus export |
+| A0-07 | P3 | Persist categorized conversation history and append-only audit events | student team | `src/history/`, `src/api/`, `tests/` | A0-02 | done | SQLite/API tests prove ordered history, fixed `legal_language` category, and content-safe audit records |
+| A1-01 | P0 | Confirm canonical corpus schema, review states, and legacy mapping | student team | `src/corpus/`, `tests/`, `docs/DATASET_CARD.md` | A0-03 | ready | schema tests validate canonical and legacy rows without private fixtures |
+| A1-02 | P0 | Define private local artifact storage, background tasks, retention, and job states | unassigned | `src/common/`, `src/api/`, `configs/`, `tests/` | A1-01 | planned | configuration and state-transition tests pass |
+| A1-03 | P0 | Implement safe paired-PDF upload and queued job status API | unassigned | `src/api/`, `src/corpus/ingestion/`, `tests/` | A1-02 | planned | invalid, oversized, malformed, and mismatched inputs fail safely |
+| A1-04 | P0 | Render PDFs into ordered page images and record artifact checksums | unassigned | `src/corpus/ingestion/`, `scripts/`, `tests/` | A1-03 | planned | synthetic PDF integration test preserves order and page count |
+| A1-05 | P0 | Add replaceable Amharic and English OCR providers | unassigned | `src/corpus/ocr/`, `configs/`, `tests/` | A1-04 | planned | offline provider-contract tests and reviewed public sample smoke test |
+| A1-06 | P0 | Implement non-destructive normalization and alignment proposals | unassigned | `src/corpus/normalization/`, `src/corpus/alignment/`, `tests/` | A1-01, A1-05 | planned | Unicode, numeric, duplicate, mixed-script, and ratio tests pass |
+| A1-07 | P0 | Build side-by-side page/alignment review workspace | unassigned | `frontend/`, `src/api/`, `tests/` | A1-06 | planned | reviewer can edit and set review status without losing originals |
+| A1-08 | P0 | Implement deterministic canonical and legacy JSONL exports | unassigned | `src/corpus/export/`, `src/api/`, `scripts/`, `tests/` | A1-07 | planned | schema, order, row count, UTF-8, and SHA-256 tests pass |
 | A2-01 | P2 | Promote accepted corpus exports into the existing bilingual index | unassigned | `src/rag/`, `scripts/`, `tests/` | A0-05, A1-08 | planned | index retains document, page, article, language, and paired IDs |
 | A3-01 | P3 | Integrate navigation, job monitoring, errors, and generated-content labels | unassigned | `frontend/`, `src/api/`, `tests/` | A0-06, A1-08, A2-01 | planned | end-to-end local workflow passes with non-sensitive fixtures |
 | A3-02 | P3 | Add local startup commands, cleanup, backup, and restore instructions | unassigned | `scripts/`, `src/common/`, `docs/` | A3-01 | planned | clean local startup and restore checklist pass |
@@ -242,16 +248,7 @@ means the task has enough definition to begin. No implementation task is marked 
 
 ## 6. Milestone gates
 
-### Gate P0 — MT and bilingual RAG usable
-
-- React/Vite/Tailwind and FastAPI run together in local development.
-- One configured, pinned model revision serves Amharic-to-English translation.
-- Existing bilingual JSONL records are validated and indexed without entering Git.
-- Amharic and English queries return traceable passage citations.
-- Generated answers cite retrieved evidence or explicitly abstain.
-- Generated output is visibly labeled non-official.
-
-### Gate P1 — Corpus builder usable
+### Gate P0 — Project 3 corpus builder complete
 
 - Paired PDFs can be uploaded and processed as resumable background jobs.
 - The user can trace every text segment back to a file checksum and page image.
@@ -261,7 +258,14 @@ means the task has enough definition to begin. No implementation task is marked 
 - The legacy `id`/`am`/`en` import and export path works without discarding the canonical record.
 - Private uploads and full extracted text do not appear in logs or Git.
 
-### Gate P2 — Corpus-to-RAG integration usable
+### Gate P1 — Project 1 translation usable
+
+- One configured, pinned model revision serves Amharic-to-English translation.
+- Model loading is lazy and does not download or initialize a GPU during import.
+- Output identifies the model revision and is visibly labeled generated and non-official.
+- The base model can later load a fine-tuned adapter without breaking the API.
+
+### Gate P2 — Project 2 bilingual RAG usable
 
 - Only approved records enter the index.
 - Results retain bilingual pairing and document/page/article/passage citations.
@@ -288,18 +292,31 @@ These are implementation decisions, not blockers for the overall plan:
   separate ingestion path.
 - Pin an immutable NLLB model revision before A0-04's model smoke test.
 
-## 8. Ten things to do today
+## 8. How to finish Project 3
 
-1. **Done:** Assign student-team contributors to A0-01 through A0-03 and record file overlap.
-2. **Done:** Create a `feature/mt-rag-foundation` branch in a Git-enabled workspace.
-3. **Done:** Scaffold `frontend/` with React, TypeScript, Vite, and Tailwind CSS v4.
-4. **Done:** Add FastAPI application startup and `GET /health` under `src/api/`.
-5. **Done:** Add environment-based settings for API URL, model ID/revision, data path, and database URL.
-6. **Done:** Define Pydantic contracts for `/v1/translate`, `/v1/search`, and `/v1/answer`.
-7. **Done:** Create safe synthetic Amharic/English fixtures; no private JSONL rows were copied into Git.
-8. **Done:** Implement a streaming validator for the existing `id`/`am`/`en` JSONL shape.
-9. **Done:** Create integrated Translate, Search, and Ask screens wired to clearly labeled mock APIs.
-10. Run tests, Ruff, compile checks, and the frontend build; record actual results in the plan.
+Follow this order; do not combine all corpus work into one pull request.
+
+1. Merge the current foundation/documentation branch into `main` after student review.
+2. Create `feature/corpus-schema` from updated `main` and assign A1-01.
+3. Define the canonical Pydantic schema, deterministic ID rule, review states, provenance fields, and
+   safe legacy `id`/`am`/`en` migration.
+4. Validate the existing local JSONL and produce counts/errors only; do not commit its text.
+5. Create `feature/pdf-ingestion` and implement PDF validation, paired-document metadata, checksums,
+   page rendering, and private artifact paths.
+6. Create `feature/bilingual-ocr` and implement replaceable Amharic/English OCR contracts, confidence,
+   engine version, and original page text preservation.
+7. Create `feature/page-alignment` and implement non-destructive normalization plus page/passage
+   proposals with separate language, ratio, numeric, article-reference, and similarity scores.
+8. Calibrate thresholds with student review; automatic proposals must start as `review`, not
+   `accepted`.
+9. Create `feature/alignment-review` and implement side-by-side images/text, corrections, reviewer
+   state, and revision history.
+10. Create `feature/corpus-export` and implement deterministic canonical JSONL, legacy compatibility
+    JSONL, schema validation, row counts, sorted IDs, and SHA-256 manifests.
+11. Verify duplicate IDs, Unicode preservation, empty/malformed rows, extreme ratios, related-document
+    leakage, checksum reproducibility, and export/import ID correspondence.
+12. Version the approved dataset, update `docs/DATASET_CARD.md`, record limitations, and merge only
+    after another student contributor reviews schema, privacy, and acceptance evidence.
 
 ## 9. Git branch flow for the MVP
 
@@ -307,20 +324,28 @@ Use `main` only for reviewed, working milestones. Do not implement the entire MV
 
 ```text
 main
-  `-- feature/mt-rag-foundation
+  `-- feature/corpus-schema
         |-- merge through reviewed pull request
         v
       main
-  `-- feature/bilingual-rag
+  `-- feature/pdf-ingestion
         |-- merge through reviewed pull request
         v
       main
-  `-- feature/corpus-builder
+  `-- feature/bilingual-ocr
         |-- merge through reviewed pull request
         v
       main
-  `-- feature/corpus-rag-integration
-        `-- merge through reviewed pull request -> MVP tag
+  `-- feature/page-alignment
+        |-- merge through reviewed pull request
+        v
+      main
+  `-- feature/alignment-review
+        |-- merge through reviewed pull request
+        v
+      main
+  `-- feature/corpus-export
+        `-- merge through reviewed pull request -> Project 3 dataset version
 ```
 
 Branch rules:
@@ -338,12 +363,14 @@ Branch rules:
 
 Recommended branch sequence:
 
-1. `feature/mt-rag-foundation` — frontend, FastAPI health check, contracts, settings, fixtures.
-2. `feature/translation-service` — selected NLLB loader, translation endpoint, Translate page.
-3. `feature/bilingual-rag` — JSONL validation, FAISS index, search, citations, abstention, UI.
-4. `feature/corpus-builder` — PDF rendering, OCR, alignment review, JSONL export.
-5. `feature/corpus-rag-integration` — add accepted exports to the FAISS index.
-6. `chore/mvp-local-release` — startup scripts, documentation, backup/restore, final checks.
+1. `feature/corpus-schema` — schema, IDs, provenance, review states, legacy migration.
+2. `feature/pdf-ingestion` — upload validation, checksums, storage, and page rendering.
+3. `feature/bilingual-ocr` — OCR provider boundary, page text, confidence, engine metadata.
+4. `feature/page-alignment` — normalization, proposals, component scores, thresholds.
+5. `feature/alignment-review` — side-by-side review, edits, decisions, revision history.
+6. `feature/corpus-export` — deterministic JSONL, compatibility export, checksums, dataset card.
+7. `feature/translation-service` — begin Project 1 only after the Project 3 gate passes.
+8. `feature/bilingual-rag` — begin Project 2 using accepted versioned corpus records.
 
 ## 10. Verification order
 
