@@ -1,0 +1,39 @@
+experiment_name: amh_eng_legal_lora_v1
+seed: 42
+model:
+  name: facebook/nllb-200-distilled-600M
+  revision: main  # Replace with an immutable commit revision for reported runs.
+  source_language: amh_Ethi
+  target_language: eng_Latn
+data:
+  train_file: data/processed/train/train.csv
+  validation_file: data/processed/validation/validation.csv
+  test_file: data/processed/test/test.csv
+  source_column: source
+  target_column: target
+  id_column: id
+  document_id_column: document_id
+  max_source_length: 256
+  max_target_length: 256
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules: [q_proj, v_proj]
+training:
+  learning_rate: 0.0001
+  epochs: 3
+  train_batch_size: 1
+  evaluation_batch_size: 1
+  gradient_accumulation_steps: 16
+  fp16: true
+  gradient_checkpointing: true
+  predict_with_generate: true
+  save_best_model: true
+  metric_for_best_model: chrf
+  greater_is_better: true
+  output_dir: artifacts/adapters/amh_eng_legal_lora_v1
+evaluation:
+  primary_metric: chrf
+  secondary_metrics: [bleu, terminology_accuracy, number_preservation, human_adequacy]
+
