@@ -1,30 +1,37 @@
 # Ethiopian Legal Language System
 
-An integrated Amharic-English legal-language platform with three connected capabilities:
+One integrated system with three connected parts:
 
-1. machine translation and bilingual retrieval/RAG;
-2. a scanned-PDF parallel-corpus builder; and
-3. a shared application that can add reviewed corpus output to the retrieval index.
+1. Amharic-to-English legal-scope machine translation using one selected model;
+2. bilingual search and retrieval-augmented answers (RAG); and
+3. a scanned-PDF parallel-corpus builder.
 
 > Translations, alignments, and generated answers are non-official output and are not legal advice.
 > Answers must cite supporting passages or abstain.
 
 ## Delivery order
 
-### Project 1 — Machine translation and bilingual RAG
+### Project 1 — Amharic-to-English legal-scope machine translation
 
-Build the first usable application with:
+Build the first translation service with:
 
 - Amharic-to-English translation using `facebook/nllb-200-distilled-600M`;
 - a stable model interface that can load a future fine-tuned adapter;
+- typed translation API requests and responses; and
+- clearly labeled non-official generated output.
+
+Fine-tuning and accuracy improvement are deferred until the application is working.
+
+### Project 2 — Bilingual search and RAG
+
+Build the bilingual evidence service with:
+
 - import and validation for the existing `id`/`am`/`en` JSONL corpus;
 - Amharic and English legal-passage search;
 - citation-grounded answers; and
 - deterministic abstention when supporting evidence is insufficient.
 
-Fine-tuning and accuracy improvement are deferred until the application is working.
-
-### Project 2 — Scanned-PDF parallel-corpus builder
+### Project 3 — Scanned-PDF parallel-corpus builder
 
 Build a workflow where a contributor can:
 
@@ -38,9 +45,9 @@ Build a workflow where a contributor can:
 Original OCR, normalized text, reviewer edits, page references, provenance, and component alignment
 scores remain separate. Unreviewed output is never automatically published or indexed.
 
-### Project 3 — Integration
+### Integrated application
 
-Approved corpus-builder exports can be added to Project 1's bilingual index. All three capabilities
+Approved corpus-builder exports can be added to Project 2's bilingual index. All three capabilities
 share one web application, FastAPI backend, validation rules, storage boundary, and generated-content
 labels.
 
