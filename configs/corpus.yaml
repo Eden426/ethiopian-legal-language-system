@@ -1,0 +1,41 @@
+# Negarit Gazeta corpus extraction settings.
+# Paths are relative to the repository root unless absolute.
+paths:
+  input_dir: data/corpus/input
+  working_dir: data/corpus/working
+  pages_dir: data/corpus/pages
+  ocr_dir: data/corpus/ocr
+  output_dir: data/corpus/exports
+  log_dir: artifacts/corpus_logs
+
+tesseract:
+  # Set to an absolute path only if Tesseract is not discoverable automatically.
+  path: null
+  amharic_language: amh
+  english_language: eng
+  amharic_config: "--oem 1 --psm 4 -c preserve_interword_spaces=1"
+  english_config: "--oem 3 --psm 4"
+
+poppler:
+  # Set to the directory containing pdftoppm.exe/pdfinfo.exe if PATH discovery is unavailable.
+  path: null
+
+ocr:
+  dpi: 400
+
+image:
+  top_crop_ratio: 0.05
+  bottom_crop_ratio: 0.08
+  first_page_title_ratio: 0.38
+
+processing:
+  overwrite_output: true
+  sort_input_files: true
+  save_page_images: false
+
+output:
+  # Keep the legacy extractor's JSON shape unchanged.
+  format: legacy_page_json
+  ensure_ascii: false
+  indent: 4
+  write_manifest: true
