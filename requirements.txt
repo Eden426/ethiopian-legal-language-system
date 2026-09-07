@@ -19,4 +19,8 @@ uvicorn[standard]>=0.30,<1
 pydantic>=2.8,<3
 pytest>=8.2,<10
 ruff>=0.6,<1
+Pillow>=10.0,<13
+pdf2image>=1.17,<2
+pytesseract>=0.3.13,<1
+opencv-python>=4.10,<5
 

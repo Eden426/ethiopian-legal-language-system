@@ -46,3 +46,21 @@ frontend/.vite/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+# Local corpus data
+/data/corpus/*
+
+!/data/corpus/input/
+!/data/corpus/working/
+!/data/corpus/pages/
+!/data/corpus/ocr/
+!/data/corpus/exports/
+
+/data/corpus/input/*
+/data/corpus/working/*
+/data/corpus/pages/*
+/data/corpus/ocr/*
+/data/corpus/exports/*
+
+# Generated corpus logs
+/artifacts/corpus_logs/
+*.egg-info/
