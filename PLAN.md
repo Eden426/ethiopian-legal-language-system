@@ -222,7 +222,9 @@ produce the same three-field shape, but the canonical backend record remains ric
 ## 5. Task plan
 
 `Student team` is initially `unassigned`; contributors update it before implementation. `ready`
-means the task has enough definition to begin. No implementation task is marked done in this plan.
+means the task has enough definition to begin. Foundation tasks marked `done` retain their recorded
+acceptance evidence; all corpus-builder, model, retrieval, and integration tasks remain gated by
+their listed dependencies.
 
 | ID | Priority | Task | Student team | Files | Depends on | Status | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -240,7 +242,7 @@ means the task has enough definition to begin. No implementation task is marked 
 | A1-05 | P0 | Add replaceable Amharic and English OCR providers | unassigned | `src/corpus/ocr/`, `configs/`, `tests/` | A1-04 | planned | offline provider-contract tests and reviewed public sample smoke test |
 | A1-06 | P0 | Implement non-destructive normalization and alignment proposals | unassigned | `src/corpus/normalization/`, `src/corpus/alignment/`, `tests/` | A1-01, A1-05 | planned | Unicode, numeric, duplicate, mixed-script, and ratio tests pass |
 | A1-07 | P0 | Build side-by-side page/alignment review workspace | unassigned | `frontend/`, `src/api/`, `tests/` | A1-06 | planned | reviewer can edit and set review status without losing originals |
-| A1-08 | P0 | Implement deterministic canonical and legacy JSONL exports | unassigned | `src/corpus/export/`, `src/api/`, `scripts/`, `tests/` | A1-07 | planned | schema, order, row count, UTF-8, and SHA-256 tests pass |
+| A1-08 | P0 | Implement deterministic corpus splits plus canonical and legacy JSONL exports | unassigned | `src/corpus/splitting/`, `src/corpus/export/`, `src/api/`, `scripts/`, `tests/` | A1-07 | planned | deterministic 80/10/10 document-level splits pass schema, isolation, related/duplicate leakage, review-state, row-count, ID-correspondence, UTF-8, and SHA-256 checks |
 | A2-01 | P2 | Promote accepted corpus exports into the existing bilingual index | unassigned | `src/rag/`, `scripts/`, `tests/` | A0-05, A1-08 | planned | index retains document, page, article, language, and paired IDs |
 | A3-01 | P3 | Integrate navigation, job monitoring, errors, and generated-content labels | unassigned | `frontend/`, `src/api/`, `tests/` | A0-06, A1-08, A2-01 | planned | end-to-end local workflow passes with non-sensitive fixtures |
 | A3-02 | P3 | Add local startup commands, cleanup, backup, and restore instructions | unassigned | `scripts/`, `src/common/`, `docs/` | A3-01 | planned | clean local startup and restore checklist pass |
@@ -255,6 +257,10 @@ means the task has enough definition to begin. No implementation task is marked 
 - Original OCR and normalized/reviewed text are distinct.
 - A human review is required before an alignment becomes accepted.
 - Canonical JSONL validates, exports deterministically, and includes a checksum manifest.
+- Train, validation, and test exports use a deterministic 80/10/10 split by `document_id`, with no
+  duplicate, amended, or closely related document leakage across splits.
+- `synthetic_unverified` records remain identifiable in training data and never enter validation or
+  test exports.
 - The legacy `id`/`am`/`en` import and export path works without discarding the canonical record.
 - Private uploads and full extracted text do not appear in logs or Git.
 
@@ -311,10 +317,12 @@ Follow this order; do not combine all corpus work into one pull request.
    `accepted`.
 9. Create `feature/alignment-review` and implement side-by-side images/text, corrections, reviewer
    state, and revision history.
-10. Create `feature/corpus-export` and implement deterministic canonical JSONL, legacy compatibility
-    JSONL, schema validation, row counts, sorted IDs, and SHA-256 manifests.
-11. Verify duplicate IDs, Unicode preservation, empty/malformed rows, extreme ratios, related-document
-    leakage, checksum reproducibility, and export/import ID correspondence.
+10. Create `feature/corpus-splits-export` and implement deterministic 80/10/10 splitting by
+    `document_id`, canonical JSONL, legacy compatibility JSONL, schema validation, row counts, sorted
+    IDs, and SHA-256 manifests.
+11. Verify duplicate IDs, Unicode preservation, empty/malformed rows, extreme ratios, document and
+    related-document isolation, `synthetic_unverified` exclusion from validation/test, checksum
+    reproducibility, and export/import ID correspondence.
 12. Version the approved dataset, update `docs/DATASET_CARD.md`, record limitations, and merge only
     after another student contributor reviews schema, privacy, and acceptance evidence.
 
@@ -344,7 +352,7 @@ main
         |-- merge through reviewed pull request
         v
       main
-  `-- feature/corpus-export
+  `-- feature/corpus-splits-export
         `-- merge through reviewed pull request -> Project 3 dataset version
 ```
 
@@ -368,7 +376,8 @@ Recommended branch sequence:
 3. `feature/bilingual-ocr` — OCR provider boundary, page text, confidence, engine metadata.
 4. `feature/page-alignment` — normalization, proposals, component scores, thresholds.
 5. `feature/alignment-review` — side-by-side review, edits, decisions, revision history.
-6. `feature/corpus-export` — deterministic JSONL, compatibility export, checksums, dataset card.
+6. `feature/corpus-splits-export` — deterministic document-level splits, JSONL compatibility export,
+   leakage checks, checksums, and dataset card.
 7. `feature/translation-service` — begin Project 1 only after the Project 3 gate passes.
 8. `feature/bilingual-rag` — begin Project 2 using accepted versioned corpus records.
 

@@ -71,7 +71,8 @@ The student team should finish the corpus builder through small reviewed branche
 3. `feature/bilingual-ocr` — replaceable Amharic and English OCR providers and page metadata.
 4. `feature/page-alignment` — normalization and explainable page/passage alignment proposals.
 5. `feature/alignment-review` — side-by-side review, correction, and review status workflow.
-6. `feature/corpus-export` — deterministic JSONL, compatibility export, and SHA-256 manifest.
+6. `feature/corpus-splits-export` — deterministic document-level splits, JSONL compatibility export,
+   leakage checks, and SHA-256 manifests.
 
 Do not begin with real private PDFs. Build and test each stage using synthetic or clearly public
 fixtures. The local corpus and uploaded documents remain outside Git.
@@ -126,9 +127,10 @@ checkpoints must remain outside Git.
 
 ## Current status
 
-**Planning baseline.** The architecture and implementation order are defined. The React frontend,
-FastAPI application, translation service, retrieval index, and corpus-processing workflow still need
-implementation. No training or accuracy result is claimed.
+**Foundation implemented; corpus builder next.** The React/Vite application shell, FastAPI health
+check and typed contracts, safe configuration, legacy JSONL validation, and local conversation
+history are implemented. Translation model loading, a production retrieval index, and the
+corpus-processing workflow are not yet implemented. No training or accuracy result is claimed.
 
 ## Backend setup
 
@@ -216,7 +218,7 @@ Build the MVP through small reviewed branches in this order:
 3. `feature/bilingual-ocr`
 4. `feature/page-alignment`
 5. `feature/alignment-review`
-6. `feature/corpus-export`
+6. `feature/corpus-splits-export`
 7. `feature/translation-service`
 8. `feature/bilingual-rag`
 9. `chore/mvp-local-release`
