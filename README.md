@@ -78,7 +78,7 @@ Do not begin with real private PDFs. Build and test each stage using synthetic o
 fixtures. The local corpus and uploaded documents remain outside Git.
 
 See [PLAN.md](PLAN.md) for the architecture, task dependencies, milestone gates, API contracts, and
-today's work checklist. See [REQUIREMENTS.md](REQUIREMENTS.md) for acceptance requirements.
+Project 3 completion checklist. See [REQUIREMENTS.md](REQUIREMENTS.md) for acceptance requirements.
 
 ## Technology stack
 
