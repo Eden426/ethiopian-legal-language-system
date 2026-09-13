@@ -1,9 +1,10 @@
 """FastAPI application for the local MVP."""
 
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from src.api.contracts import (
@@ -13,6 +14,10 @@ from src.api.contracts import (
     ConversationCreate,
     ConversationDetail,
     ConversationSummary,
+    CorpusFileResponse,
+    CorpusJobCreate,
+    CorpusJobResponse,
+    CorpusUploadConstraints,
     ErrorResponse,
     MessageCreate,
     MessageResponse,
@@ -21,7 +26,10 @@ from src.api.contracts import (
     TranslationRequest,
     TranslationResponse,
 )
+from src.common.artifact_storage import ArtifactStorage, ArtifactStorageConfig
+from src.common.job_store import Job, JobStore
 from src.common.settings import load_app_settings
+from src.corpus.ingestion import PdfUploadError, UploadLimits, store_upload_pair
 from src.history import ConversationNotFoundError, HistoryStore
 
 
@@ -57,6 +65,33 @@ def get_history_store() -> HistoryStore:
 HistoryStoreDependency = Annotated[HistoryStore, Depends(get_history_store)]
 
 
+@lru_cache(maxsize=1)
+def get_job_store() -> JobStore:
+    """Return the local SQLite corpus-job store."""
+
+    settings = load_app_settings()
+    return JobStore.from_database_url(settings.database_url)
+
+
+@lru_cache(maxsize=1)
+def get_artifact_storage() -> ArtifactStorage:
+    """Return private local artifact storage for uploaded PDFs."""
+
+    return ArtifactStorage(ArtifactStorageConfig.from_env())
+
+
+@lru_cache(maxsize=1)
+def get_upload_limits() -> UploadLimits:
+    """Return validated per-file PDF upload limits."""
+
+    return UploadLimits.from_env()
+
+
+JobStoreDependency = Annotated[JobStore, Depends(get_job_store)]
+ArtifactStorageDependency = Annotated[ArtifactStorage, Depends(get_artifact_storage)]
+UploadLimitsDependency = Annotated[UploadLimits, Depends(get_upload_limits)]
+
+
 def _not_found(conversation_id: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -65,6 +100,154 @@ def _not_found(conversation_id: str) -> HTTPException:
             "message": f"Conversation {conversation_id} was not found.",
         },
     )
+
+
+def _corpus_not_found(job_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={
+            "code": "corpus_job_not_found",
+            "message": f"Corpus job {job_id} was not found.",
+        },
+    )
+
+
+def _corpus_job_response(
+    job: Job,
+    store: JobStore,
+    limits: UploadLimits,
+) -> CorpusJobResponse:
+    files = [
+        CorpusFileResponse(
+            role=record.role,
+            language=record.language,
+            original_name=record.original_name,
+            sha256=record.sha256,
+            size_bytes=record.size_bytes,
+            page_count=record.page_count,
+        )
+        for record in store.list_uploads(job.id)
+    ]
+    return CorpusJobResponse(
+        job_id=job.id,
+        state=job.state.value,
+        law_type=job.law_type,
+        title=job.title,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        expires_at=job.expires_at,
+        upload_constraints=CorpusUploadConstraints(
+            max_pdf_bytes=limits.max_pdf_bytes,
+            max_pdf_pages=limits.max_pdf_pages,
+        ),
+        files=files,
+    )
+
+
+@app.post(
+    "/v1/corpus/jobs",
+    response_model=CorpusJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["corpus"],
+)
+def create_corpus_job(
+    payload: CorpusJobCreate,
+    store: JobStoreDependency,
+    storage: ArtifactStorageDependency,
+    limits: UploadLimitsDependency,
+) -> CorpusJobResponse:
+    """Create a local paired-PDF upload job."""
+
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(days=storage.config.retention_days)
+    ).isoformat()
+    job = store.create(
+        law_type=payload.law_type,
+        title=payload.title,
+        expires_at=expires_at,
+    )
+    return _corpus_job_response(job, store, limits)
+
+
+@app.get(
+    "/v1/corpus/jobs/{job_id}",
+    response_model=CorpusJobResponse,
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+    tags=["corpus"],
+)
+def get_corpus_job(
+    job_id: str,
+    store: JobStoreDependency,
+    limits: UploadLimitsDependency,
+) -> CorpusJobResponse:
+    """Return upload status and content-safe file metadata."""
+
+    job = store.get(job_id)
+    if job is None:
+        raise _corpus_not_found(job_id)
+    return _corpus_job_response(job, store, limits)
+
+
+@app.post(
+    "/v1/corpus/jobs/{job_id}/files",
+    response_model=CorpusJobResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+        status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"model": ErrorResponse},
+        status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: {"model": ErrorResponse},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+    },
+    tags=["corpus"],
+)
+def upload_corpus_files(
+    job_id: str,
+    source_file: Annotated[UploadFile, File(description="Amharic PDF")],
+    target_file: Annotated[UploadFile, File(description="English PDF")],
+    confirm_same_document: Annotated[bool, Form()],
+    store: JobStoreDependency,
+    storage: ArtifactStorageDependency,
+    limits: UploadLimitsDependency,
+) -> CorpusJobResponse:
+    """Validate and privately store an Amharic/English PDF pair."""
+
+    if store.get(job_id) is None:
+        raise _corpus_not_found(job_id)
+    if not confirm_same_document:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "document_pair_not_confirmed",
+                "message": "Confirm that both PDFs represent the same document.",
+            },
+        )
+    try:
+        job, _ = store_upload_pair(
+            job_id=job_id,
+            source_file=source_file.file,
+            source_filename=source_file.filename,
+            source_content_type=source_file.content_type,
+            target_file=target_file.file,
+            target_filename=target_file.filename,
+            target_content_type=target_file.content_type,
+            storage=storage,
+            store=store,
+            limits=limits,
+        )
+    except PdfUploadError as error:
+        status_by_category = {
+            "conflict": status.HTTP_409_CONFLICT,
+            "media_type": status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            "too_large": status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        }
+        raise HTTPException(
+            status_code=status_by_category.get(
+                error.category,
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            ),
+            detail={"code": error.code, "message": str(error)},
+        ) from error
+    return _corpus_job_response(job, store, limits)
 
 
 @app.post(

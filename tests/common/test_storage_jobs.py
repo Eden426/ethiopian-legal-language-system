@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -37,6 +38,40 @@ def test_job_state_transitions_and_invalid_transition(tmp_path: Path) -> None:
     assert job.state is JobState.PROCESSING
     with pytest.raises(ValueError):
         store.transition(job.id, JobState.CREATED)
+
+
+def test_job_preserves_selected_law_type_and_title(tmp_path: Path) -> None:
+    store = JobStore(tmp_path / "jobs.db")
+
+    job = store.create(law_type="book", title="  Synthetic title  ")
+
+    assert job.law_type == "book"
+    assert job.title == "Synthetic title"
+    assert store.get(job.id) == job
+
+
+def test_job_store_migrates_existing_local_schema(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """CREATE TABLE corpus_jobs (
+                id TEXT PRIMARY KEY,
+                state TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                expires_at TEXT
+            )"""
+        )
+        connection.execute(
+            "INSERT INTO corpus_jobs VALUES ('old-job', 'created', 'now', 'now', NULL)"
+        )
+
+    store = JobStore(database)
+
+    migrated = store.get("old-job")
+    assert migrated is not None
+    assert migrated.law_type == "proclamation"
+    assert migrated.title is None
 
 
 def test_terminal_job_cannot_transition(tmp_path: Path) -> None:

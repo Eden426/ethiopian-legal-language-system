@@ -14,7 +14,7 @@ class ArtifactStorageConfig:
     retention_days: int = 30
 
     @classmethod
-    def from_env(cls, base_dir: Path | None = None) -> "ArtifactStorageConfig":
+    def from_env(cls, base_dir: Path | None = None) -> ArtifactStorageConfig:
         base = base_dir or Path.cwd()
         raw_root = os.getenv("ELLS_ARTIFACT_ROOT", str(base / "data" / "artifacts"))
         retention = int(os.getenv("ELLS_ARTIFACT_RETENTION_DAYS", "30"))
@@ -46,3 +46,11 @@ class ArtifactStorage:
         for name in ("uploads", "pages", "ocr", "exports"):
             (root / name).mkdir(exist_ok=True)
         return root
+
+    def upload_path(self, job_id: str, role: str) -> Path:
+        """Return an application-owned path for a source or target PDF."""
+
+        if role not in {"source", "target"}:
+            raise ValueError("Upload role must be source or target")
+        uploads_dir = self.create_job_layout(job_id) / "uploads"
+        return uploads_dir / f"{role}.pdf"

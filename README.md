@@ -127,10 +127,12 @@ checkpoints must remain outside Git.
 
 ## Current status
 
-**Foundation implemented; corpus builder next.** The React/Vite application shell, FastAPI health
-check and typed contracts, safe configuration, legacy JSONL validation, and local conversation
-history are implemented. Translation model loading, a production retrieval index, and the
-corpus-processing workflow are not yet implemented. No training or accuracy result is claimed.
+**Foundation and paired-PDF upload implemented; corpus processing next.** The React/Vite
+application shell, FastAPI health check and typed contracts, safe configuration, legacy JSONL
+validation, local conversation history, and private paired-PDF upload are implemented. A
+contributor can select `proclamation` or `book`, create a corpus job, and upload separate Amharic
+and English PDFs. Page rendering, OCR, alignment review, export, translation model loading, and a
+production retrieval index are not yet implemented. No training or accuracy result is claimed.
 
 ## Backend setup
 
@@ -159,6 +161,34 @@ npm run dev
 
 The local frontend runs at `http://localhost:5173`; the API health endpoint is
 `http://localhost:8000/health`.
+
+## Parallel-corpus upload
+
+Open the **Corpus** workspace, choose **Proclamation** or **Book**, and select the matching Amharic
+and English PDFs. The API validates the filename, PDF media type and signature, readable page count,
+configured size/page limits, and that the two language files are not identical. Accepted files are
+stored under the ignored private artifact root with SHA-256 metadata in local SQLite; file content
+and local paths are not returned by the API.
+
+The configurable per-file defaults are 50 MiB and 500 pages:
+
+```text
+ELLS_ARTIFACT_ROOT=data/artifacts
+ELLS_ARTIFACT_RETENTION_DAYS=30
+ELLS_MAX_PDF_BYTES=52428800
+ELLS_MAX_PDF_PAGES=500
+```
+
+The upload endpoints are:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /v1/corpus/jobs` | Create a `proclamation` or `book` job and return upload limits |
+| `POST /v1/corpus/jobs/{id}/files` | Store one Amharic PDF and one English PDF after validation |
+| `GET /v1/corpus/jobs/{id}` | Read job state, checksums, page counts, and safe file metadata |
+
+Supabase is not required for the local MVP. SQLite and private local files remain the planned
+storage boundary until authentication, public hosting, or multi-user access is approved.
 
 Validate a local legacy `id`/`am`/`en` JSONL file without printing its text:
 
