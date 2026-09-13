@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import {
   Citation,
@@ -11,6 +11,7 @@ import {
   CorpusJob,
   LawType,
   createCorpusJob,
+  getCorpusJob,
   uploadCorpusFiles,
 } from "./api/corpusApi";
 
@@ -77,6 +78,17 @@ function CorpusBuilderPanel() {
   const [job, setJob] = useState<CorpusJob | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!job || job.state === "failed" || job.stage === "pages_rendered") return;
+    if (job.state !== "queued" && job.stage !== "page_rendering") return;
+    const timer = window.setInterval(() => {
+      void getCorpusJob(job.job_id)
+        .then(setJob)
+        .catch(() => setMessage("Job status could not be refreshed."));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [job]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -226,8 +238,15 @@ function CorpusBuilderPanel() {
             {job.title || (job.law_type === "book" ? "Untitled book" : "Untitled proclamation")}
           </h3>
           <p className="mt-1 text-sm text-[#60453d]">
-            Job <code className="rounded bg-white px-1.5 py-0.5">{job.job_id}</code> is {job.state}.
+            Job <code className="rounded bg-white px-1.5 py-0.5">{job.job_id}</code> is {job.stage}.
           </p>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white" aria-label="Job progress">
+            <div
+              className="h-full bg-emerald-700 transition-all"
+              style={{ width: `${Math.round(job.progress * 100)}%` }}
+            />
+          </div>
+          <p className="mt-1 text-xs text-[#60453d]">{Math.round(job.progress * 100)}% complete</p>
           {job.document_id && (
             <p className="mt-2 break-all text-xs text-[#60453d]">
               Stable document ID: <code>{job.document_id}</code>
@@ -245,9 +264,17 @@ function CorpusBuilderPanel() {
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-sm text-emerald-900">
-            The files are stored locally. Page rendering, OCR, alignment, and human review are the next stages.
-          </p>
+          {job.error_code ? (
+            <p className="mt-4 text-sm font-semibold text-red-800">
+              Rendering stopped safely ({job.error_code}). The original PDFs were preserved.
+            </p>
+          ) : (
+            <p className="mt-4 text-sm text-emerald-900">
+              {job.stage === "pages_rendered"
+                ? `${job.pages.length} ordered page images are ready for OCR. OCR and alignment still require contributor review.`
+                : "The files are stored locally and page rendering is running in the background."}
+            </p>
+          )}
         </article>
       )}
     </section>

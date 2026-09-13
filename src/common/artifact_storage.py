@@ -54,3 +54,14 @@ class ArtifactStorage:
             raise ValueError("Upload role must be source or target")
         uploads_dir = self.create_job_layout(job_id) / "uploads"
         return uploads_dir / f"{role}.pdf"
+
+    def page_path(self, job_id: str, role: str, page_number: int) -> Path:
+        """Return an application-owned path for one ordered rendered page."""
+
+        if role not in {"source", "target"}:
+            raise ValueError("Page role must be source or target")
+        if page_number < 1 or page_number > 999_999:
+            raise ValueError("Page number must be between 1 and 999999")
+        pages_dir = self.create_job_layout(job_id) / "pages" / role
+        pages_dir.mkdir(exist_ok=True)
+        return pages_dir / f"{page_number:06d}.png"

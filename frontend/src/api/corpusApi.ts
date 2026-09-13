@@ -9,9 +9,22 @@ export type CorpusFile = {
   page_count: number;
 };
 
+export type CorpusPage = {
+  role: "source" | "target";
+  language: "amh_Ethi" | "eng_Latn";
+  page_number: number;
+  sha256: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+};
+
 export type CorpusJob = {
   job_id: string;
   state: "created" | "uploaded" | "queued" | "processing" | "review" | "completed" | "failed" | "expired";
+  stage: string;
+  progress: number;
+  error_code: string | null;
   law_type: LawType;
   title: string | null;
   document_id: string | null;
@@ -26,6 +39,7 @@ export type CorpusJob = {
     target_language: "eng_Latn";
   };
   files: CorpusFile[];
+  pages: CorpusPage[];
 };
 
 const API_ROOT = "/api";
@@ -63,6 +77,12 @@ export async function uploadCorpusFiles(
     method: "POST",
     body: form,
   });
+  if (!response.ok) throw await responseError(response);
+  return (await response.json()) as CorpusJob;
+}
+
+export async function getCorpusJob(jobId: string): Promise<CorpusJob> {
+  const response = await fetch(`${API_ROOT}/v1/corpus/jobs/${jobId}`);
   if (!response.ok) throw await responseError(response);
   return (await response.json()) as CorpusJob;
 }

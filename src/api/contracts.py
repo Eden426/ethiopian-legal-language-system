@@ -183,8 +183,20 @@ class CorpusFileResponse(ApiModel):
     page_count: int = Field(ge=1)
 
 
+class CorpusPageResponse(ApiModel):
+    """Safe checksum metadata for one privately stored rendered page."""
+
+    role: Literal["source", "target"]
+    language: Literal["amh_Ethi", "eng_Latn"]
+    page_number: int = Field(ge=1)
+    sha256: str = Field(min_length=64, max_length=64)
+    size_bytes: int = Field(ge=1)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+
+
 class CorpusJobResponse(ApiModel):
-    """Corpus job metadata and current upload state."""
+    """Corpus job metadata, progress, and content-safe artifact state."""
 
     job_id: str
     state: Literal[
@@ -197,6 +209,9 @@ class CorpusJobResponse(ApiModel):
         "failed",
         "expired",
     ]
+    stage: str
+    progress: float = Field(ge=0, le=1)
+    error_code: str | None
     law_type: LawType
     title: str | None
     document_id: str | None
@@ -205,3 +220,4 @@ class CorpusJobResponse(ApiModel):
     expires_at: str | None
     upload_constraints: CorpusUploadConstraints
     files: list[CorpusFileResponse] = Field(default_factory=list)
+    pages: list[CorpusPageResponse] = Field(default_factory=list)
