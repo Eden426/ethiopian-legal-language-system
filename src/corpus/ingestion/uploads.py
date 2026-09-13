@@ -13,6 +13,7 @@ from pypdf import PdfReader
 
 from src.common.artifact_storage import ArtifactStorage
 from src.common.job_store import Job, JobStore, UploadRecord, utc_now
+from src.corpus.schema import LawType, make_document_id
 
 CHUNK_SIZE = 1024 * 1024
 PDF_CONTENT_TYPE = "application/pdf"
@@ -265,7 +266,16 @@ def store_upload_pair(
             item.temporary_path.unlink()
             promoted.append(item.destination)
         try:
-            updated_job = store.record_upload_pair(job_id, records)
+            document_id = make_document_id(
+                LawType(job.law_type),
+                records[0].sha256,
+                records[1].sha256,
+            )
+            updated_job = store.record_upload_pair(
+                job_id,
+                records,
+                document_id=document_id,
+            )
         except ValueError as error:
             raise PdfUploadError(
                 "job_not_uploadable",

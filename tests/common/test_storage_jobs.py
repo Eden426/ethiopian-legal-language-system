@@ -72,6 +72,7 @@ def test_job_store_migrates_existing_local_schema(tmp_path: Path) -> None:
     assert migrated is not None
     assert migrated.law_type == "proclamation"
     assert migrated.title is None
+    assert migrated.document_id is None
 
 
 def test_terminal_job_cannot_transition(tmp_path: Path) -> None:

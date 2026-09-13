@@ -14,6 +14,7 @@ export type CorpusJob = {
   state: "created" | "uploaded" | "queued" | "processing" | "review" | "completed" | "failed" | "expired";
   law_type: LawType;
   title: string | null;
+  document_id: string | null;
   created_at: string;
   updated_at: string;
   expires_at: string | null;

@@ -17,6 +17,7 @@ from src.api.app import (
 from src.common.artifact_storage import ArtifactStorage, ArtifactStorageConfig
 from src.common.job_store import JobStore
 from src.corpus.ingestion import UploadLimits
+from src.corpus.schema import LawType, make_document_id
 
 
 def _pdf_bytes(*, pages: int = 1, width: int = 200) -> bytes:
@@ -86,6 +87,7 @@ def test_create_book_job_and_upload_distinct_language_pdfs(
     payload = response.json()
     assert payload["law_type"] == "book"
     assert payload["state"] == "uploaded"
+    assert payload["document_id"].startswith("book-")
     assert [item["language"] for item in payload["files"]] == ["amh_Ethi", "eng_Latn"]
     assert [item["page_count"] for item in payload["files"]] == [1, 1]
     assert payload["files"][0]["original_name"] == "አዋጅ.pdf"
@@ -95,6 +97,11 @@ def test_create_book_job_and_upload_distinct_language_pdfs(
     assert storage.upload_path(job_id, "target").read_bytes() == target_pdf
     assert payload["files"][0]["sha256"] == hashlib.sha256(source_pdf).hexdigest()
     assert payload["files"][1]["sha256"] == hashlib.sha256(target_pdf).hexdigest()
+    assert payload["document_id"] == make_document_id(
+        LawType.BOOK,
+        payload["files"][0]["sha256"],
+        payload["files"][1]["sha256"],
+    )
 
 
 def test_job_status_reports_constraints_without_local_paths(
@@ -108,6 +115,7 @@ def test_job_status_reports_constraints_without_local_paths(
     assert response.status_code == 200
     assert response.json()["law_type"] == "proclamation"
     assert response.json()["state"] == "created"
+    assert response.json()["document_id"] is None
     assert response.json()["upload_constraints"] == {
         "max_pdf_bytes": 1024 * 1024,
         "max_pdf_pages": 10,

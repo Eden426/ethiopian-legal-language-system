@@ -127,12 +127,13 @@ checkpoints must remain outside Git.
 
 ## Current status
 
-**Foundation and paired-PDF upload implemented; corpus processing next.** The React/Vite
+**Foundation, draft canonical corpus contract, and paired-PDF upload implemented.** The React/Vite
 application shell, FastAPI health check and typed contracts, safe configuration, legacy JSONL
-validation, local conversation history, and private paired-PDF upload are implemented. A
-contributor can select `proclamation` or `book`, create a corpus job, and upload separate Amharic
-and English PDFs. Page rendering, OCR, alignment review, export, translation model loading, and a
-production retrieval index are not yet implemented. No training or accuracy result is claimed.
+validation and migration, local conversation history, strict canonical row schema, stable ID
+rules, and private upload storage are implemented. A contributor can select `proclamation` or
+`book`, create a corpus job, and upload separate Amharic and English PDFs. Page rendering, OCR,
+alignment review, export, translation model loading, and a production retrieval index are not yet
+implemented. No dataset, training, or accuracy result is claimed.
 
 ## Backend setup
 
@@ -196,6 +197,10 @@ Validate a local legacy `id`/`am`/`en` JSONL file without printing its text:
 python -m scripts.validate_legacy_jsonl "path\to\corpus.jsonl"
 ```
 
+The canonical contract lives in `src/corpus/schema.py`. Legacy migration requires an explicit
+`law_type`, `source_type`, and fixed timezone-aware creation timestamp. Missing document metadata is
+marked `unresolved_legacy`, and every migrated row remains in `review`.
+
 Runtime settings use the `ELLS_` environment-variable prefix. Copy [.env.example](.env.example) as
 a reference, but keep real local paths and secrets out of Git.
 
@@ -221,12 +226,11 @@ authentication, ownership checks, a documented retention policy, and an authoriz
 
 ## What to do next
 
-1. Merge the current foundation/documentation pull request into `main`.
-2. Update local `main` and create `feature/corpus-schema`.
-3. Assign A1-01 and finalize schema, IDs, provenance, source types, and review states.
-4. Add schema tests using synthetic Amharic-English fixtures only.
-5. Map the existing `id`/`am`/`en` format into canonical review records without committing its text.
-6. Review and merge the schema branch before beginning PDF ingestion.
+1. Have another student contributor review `feature/corpus-schema`, especially acceptance rules and
+   the unresolved legacy-document policy.
+2. Merge the schema through a reviewed pull request.
+3. Update `feature/paired-pdf-upload` with the approved schema and review A1-02/A1-03.
+4. Begin A1-04 ordered page rendering only after those reviews pass.
 
 The complete Project 3 checklist is in [PLAN.md](PLAN.md#8-how-to-finish-project-3).
 

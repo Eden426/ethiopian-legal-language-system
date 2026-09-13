@@ -51,6 +51,7 @@ class Job:
     state: JobState
     law_type: str
     title: str | None
+    document_id: str | None
     created_at: str
     updated_at: str
     expires_at: str | None
@@ -109,6 +110,7 @@ class JobStore:
                     state TEXT NOT NULL,
                     law_type TEXT NOT NULL DEFAULT 'proclamation',
                     title TEXT,
+                    document_id TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     expires_at TEXT
@@ -125,6 +127,8 @@ class JobStore:
                 )
             if "title" not in columns:
                 connection.execute("ALTER TABLE corpus_jobs ADD COLUMN title TEXT")
+            if "document_id" not in columns:
+                connection.execute("ALTER TABLE corpus_jobs ADD COLUMN document_id TEXT")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS corpus_uploads (
@@ -165,6 +169,7 @@ class JobStore:
             state=JobState.CREATED,
             law_type=law_type,
             title=cleaned_title or None,
+            document_id=None,
             created_at=now,
             updated_at=now,
             expires_at=expires_at,
@@ -172,13 +177,15 @@ class JobStore:
         with self._connect() as connection:
             connection.execute(
                 """INSERT INTO corpus_jobs (
-                    id, state, law_type, title, created_at, updated_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    id, state, law_type, title, document_id,
+                    created_at, updated_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     job.id,
                     job.state.value,
                     job.law_type,
                     job.title,
+                    job.document_id,
                     job.created_at,
                     job.updated_at,
                     job.expires_at,
@@ -191,7 +198,8 @@ class JobStore:
 
         with self._connect() as connection:
             row = connection.execute(
-                """SELECT id, state, law_type, title, created_at, updated_at, expires_at
+                """SELECT id, state, law_type, title, document_id,
+                    created_at, updated_at, expires_at
                 FROM corpus_jobs WHERE id = ?""",
                 (job_id,),
             ).fetchone()
@@ -202,6 +210,7 @@ class JobStore:
             state=JobState(row["state"]),
             law_type=row["law_type"],
             title=row["title"],
+            document_id=row["document_id"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             expires_at=row["expires_at"],
@@ -231,6 +240,8 @@ class JobStore:
         self,
         job_id: str,
         records: Iterable[UploadRecord],
+        *,
+        document_id: str,
     ) -> Job:
         """Atomically record the two language files and mark the job uploaded."""
 
@@ -244,6 +255,8 @@ class JobStore:
             raise ValueError("Exactly one source and one target upload are required")
         if any(record.job_id != job_id for record in pair):
             raise ValueError("Upload metadata does not belong to this job")
+        if not document_id:
+            raise ValueError("A stable document_id is required")
 
         updated_at = utc_now()
         with self._connect() as connection:
@@ -269,8 +282,10 @@ class JobStore:
                 ],
             )
             connection.execute(
-                "UPDATE corpus_jobs SET state = ?, updated_at = ? WHERE id = ?",
-                (JobState.UPLOADED.value, updated_at, job_id),
+                """UPDATE corpus_jobs
+                SET state = ?, document_id = ?, updated_at = ?
+                WHERE id = ?""",
+                (JobState.UPLOADED.value, document_id, updated_at, job_id),
             )
         updated = self.get(job_id)
         if updated is None:  # pragma: no cover - protected by the foreign key

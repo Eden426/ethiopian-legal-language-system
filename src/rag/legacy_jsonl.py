@@ -17,6 +17,15 @@ class LegacyParallelRow(BaseModel):
     am: str
     en: str
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def require_stable_legacy_id(cls, value: object) -> object:
+        """Reject ambiguous boolean and blank legacy identifiers."""
+
+        if isinstance(value, bool) or (isinstance(value, str) and not value.strip()):
+            raise ValueError("legacy id must be a non-empty integer or string")
+        return value
+
     @field_validator("am", "en")
     @classmethod
     def require_non_empty_text(cls, value: str) -> str:

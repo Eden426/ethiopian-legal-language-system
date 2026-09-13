@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.corpus.schema import LawType
+
 NON_OFFICIAL_WARNING = "Generated output is non-official and is not legal advice."
 
 
@@ -154,7 +156,7 @@ class AuditEventResponse(ApiModel):
 class CorpusJobCreate(ApiModel):
     """Create a paired-document job for a supported legal source type."""
 
-    law_type: Literal["proclamation", "book"]
+    law_type: LawType
     title: str | None = Field(default=None, min_length=1, max_length=300)
 
 
@@ -195,8 +197,9 @@ class CorpusJobResponse(ApiModel):
         "failed",
         "expired",
     ]
-    law_type: Literal["proclamation", "book"]
+    law_type: LawType
     title: str | None
+    document_id: str | None
     created_at: str
     updated_at: str
     expires_at: str | None

@@ -228,6 +228,11 @@ function CorpusBuilderPanel() {
           <p className="mt-1 text-sm text-[#60453d]">
             Job <code className="rounded bg-white px-1.5 py-0.5">{job.job_id}</code> is {job.state}.
           </p>
+          {job.document_id && (
+            <p className="mt-2 break-all text-xs text-[#60453d]">
+              Stable document ID: <code>{job.document_id}</code>
+            </p>
+          )}
           <ul className="mt-4 grid gap-3 sm:grid-cols-2">
             {job.files.map((file) => (
               <li className="rounded-xl bg-white p-4 text-sm text-[#60453d]" key={file.role}>

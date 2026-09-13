@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from src.rag.legacy_jsonl import iter_legacy_rows, validate_legacy_jsonl
+import pytest
+from pydantic import ValidationError
+
+from src.rag.legacy_jsonl import LegacyParallelRow, iter_legacy_rows, validate_legacy_jsonl
 
 FIXTURE_PATH = Path("tests/fixtures/synthetic_legacy_corpus.jsonl")
 
@@ -32,3 +35,9 @@ not-json""",
         "invalid_json",
     ]
     assert all("ሌላ" not in issue.message for issue in report.issues)
+
+
+@pytest.mark.parametrize("legacy_id", [True, "   "])
+def test_legacy_row_rejects_ambiguous_ids(legacy_id: object) -> None:
+    with pytest.raises(ValidationError, match="legacy id"):
+        LegacyParallelRow(id=legacy_id, am="ሙከራ", en="Synthetic test")

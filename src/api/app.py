@@ -133,6 +133,7 @@ def _corpus_job_response(
         state=job.state.value,
         law_type=job.law_type,
         title=job.title,
+        document_id=job.document_id,
         created_at=job.created_at,
         updated_at=job.updated_at,
         expires_at=job.expires_at,
@@ -162,7 +163,7 @@ def create_corpus_job(
         datetime.now(timezone.utc) + timedelta(days=storage.config.retention_days)
     ).isoformat()
     job = store.create(
-        law_type=payload.law_type,
+        law_type=payload.law_type.value,
         title=payload.title,
         expires_at=expires_at,
     )
