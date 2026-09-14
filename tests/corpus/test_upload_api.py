@@ -12,6 +12,7 @@ from src.api.app import (
     app,
     get_artifact_storage,
     get_job_store,
+    get_ocr_provider,
     get_page_renderer,
     get_upload_limits,
 )
@@ -19,6 +20,7 @@ from src.common.artifact_storage import ArtifactStorage, ArtifactStorageConfig
 from src.common.job_store import JobStore
 from src.corpus.ingestion import UploadLimits
 from src.corpus.ingestion.rendering import RenderedPage
+from src.corpus.ocr import OcrProviderError, OcrResult
 from src.corpus.schema import LawType, make_document_id
 
 
@@ -47,6 +49,19 @@ class FakeRenderer:
         ]
 
 
+class FakeOcrProvider:
+    """Offline OCR fixture that preserves deterministic bilingual Unicode."""
+
+    def recognize(self, image_path: Path, language: str) -> OcrResult:
+        text = "አንቀጽ ፩።\n" if language == "amh_Ethi" else "Article 1.\n"
+        return OcrResult(
+            original_text=text,
+            mean_confidence=0.75,
+            engine_name="fake-ocr",
+            engine_version="test-1",
+        )
+
+
 @pytest.fixture
 def corpus_client(tmp_path: Path) -> tuple[TestClient, JobStore, ArtifactStorage]:
     store = JobStore(tmp_path / "ells.db")
@@ -56,6 +71,7 @@ def corpus_client(tmp_path: Path) -> tuple[TestClient, JobStore, ArtifactStorage
     app.dependency_overrides[get_artifact_storage] = lambda: storage
     app.dependency_overrides[get_upload_limits] = lambda: limits
     app.dependency_overrides[get_page_renderer] = FakeRenderer
+    app.dependency_overrides[get_ocr_provider] = FakeOcrProvider
     with TestClient(app) as client:
         yield client, store, storage
     app.dependency_overrides.clear()
@@ -123,12 +139,47 @@ def test_create_book_job_and_upload_distinct_language_pdfs(
         payload["files"][1]["sha256"],
     )
     rendered = client.get(f"/v1/corpus/jobs/{job_id}").json()
-    assert rendered["stage"] == "pages_rendered"
+    assert rendered["stage"] == "ocr_complete"
     assert rendered["progress"] == 1.0
     assert [(page["role"], page["page_number"]) for page in rendered["pages"]] == [
         ("source", 1),
         ("target", 1),
     ]
+    assert [(page["language"], page["character_count"]) for page in rendered["ocr_pages"]] == [
+        ("amh_Ethi", 8),
+        ("eng_Latn", 11),
+    ]
+    assert "አንቀጽ" not in client.get(f"/v1/corpus/jobs/{job_id}").text
+    assert storage.ocr_path(job_id, "source", 1).read_bytes() == "አንቀጽ ፩።\n".encode()
+
+
+class UnavailableOcrProvider:
+    def recognize(self, _: Path, __: str) -> OcrResult:
+        raise OcrProviderError("ocr_language_data_missing", "Synthetic provider failure.")
+
+
+def test_job_status_reports_safe_ocr_failure_without_text_or_paths(
+    corpus_client: tuple[TestClient, JobStore, ArtifactStorage],
+) -> None:
+    client, _, _ = corpus_client
+    app.dependency_overrides[get_ocr_provider] = UnavailableOcrProvider
+    job_id = _create_job(client)
+
+    uploaded = client.post(
+        f"/v1/corpus/jobs/{job_id}/files",
+        files=_paired_files(),
+        data={"confirm_same_document": "true"},
+    )
+    status_response = client.get(f"/v1/corpus/jobs/{job_id}")
+
+    assert uploaded.status_code == 200
+    assert status_response.status_code == 200
+    assert status_response.json()["state"] == "failed"
+    assert status_response.json()["stage"] == "ocr_failed"
+    assert status_response.json()["error_code"] == "ocr_language_data_missing"
+    assert status_response.json()["ocr_pages"] == []
+    assert "Synthetic provider failure" not in status_response.text
+    assert str(Path.cwd()) not in status_response.text
 
 
 def test_job_status_reports_constraints_without_local_paths(

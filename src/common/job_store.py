@@ -92,6 +92,25 @@ class PageRecord:
     created_at: str
 
 
+@dataclass(frozen=True)
+class OcrRecord:
+    """Metadata for exact original OCR text stored as a private artifact."""
+
+    job_id: str
+    role: str
+    language: str
+    page_number: int
+    page_sha256: str
+    storage_name: str
+    text_sha256: str
+    text_size_bytes: int
+    character_count: int
+    mean_confidence: float | None
+    engine_name: str
+    engine_version: str
+    created_at: str
+
+
 def utc_now() -> str:
     """Return an ISO-8601 UTC timestamp."""
 
@@ -192,6 +211,31 @@ class JobStore:
 
                 CREATE INDEX IF NOT EXISTS corpus_pages_job
                     ON corpus_pages(job_id, role, page_number);
+
+                CREATE TABLE IF NOT EXISTS corpus_ocr (
+                    job_id TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK (role IN ('source', 'target')),
+                    language TEXT NOT NULL CHECK (language IN ('amh_Ethi', 'eng_Latn')),
+                    page_number INTEGER NOT NULL CHECK (page_number > 0),
+                    page_sha256 TEXT NOT NULL,
+                    storage_name TEXT NOT NULL,
+                    text_sha256 TEXT NOT NULL,
+                    text_size_bytes INTEGER NOT NULL CHECK (text_size_bytes >= 0),
+                    character_count INTEGER NOT NULL CHECK (character_count >= 0),
+                    mean_confidence REAL CHECK (
+                        mean_confidence IS NULL
+                        OR (mean_confidence >= 0 AND mean_confidence <= 1)
+                    ),
+                    engine_name TEXT NOT NULL,
+                    engine_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, role, page_number),
+                    FOREIGN KEY (job_id, role, page_number)
+                        REFERENCES corpus_pages(job_id, role, page_number)
+                );
+
+                CREATE INDEX IF NOT EXISTS corpus_ocr_job
+                    ON corpus_ocr(job_id, role, page_number);
                 """
             )
 
@@ -310,8 +354,14 @@ class JobStore:
             raise RuntimeError("Corpus job disappeared during transition")
         return updated
 
-    def update_processing_progress(self, job_id: str, progress: float) -> Job:
-        """Record bounded rendering progress for a processing job."""
+    def update_processing_progress(
+        self,
+        job_id: str,
+        progress: float,
+        *,
+        stage: str | None = None,
+    ) -> Job:
+        """Record a bounded stage progress update for a processing job."""
 
         if not 0.0 <= progress <= 1.0:
             raise ValueError("Job progress must be between 0 and 1")
@@ -320,10 +370,15 @@ class JobStore:
             raise KeyError(f"Unknown job: {job_id}")
         if job.state is not JobState.PROCESSING:
             raise ValueError("Progress can only be updated for a processing job")
+        next_stage = stage or job.stage
+        if not next_stage.strip():
+            raise ValueError("A processing stage is required")
         with self._connect() as connection:
             connection.execute(
-                "UPDATE corpus_jobs SET progress = ?, updated_at = ? WHERE id = ?",
-                (progress, utc_now(), job_id),
+                """UPDATE corpus_jobs
+                SET stage = ?, progress = ?, error_code = NULL, updated_at = ?
+                WHERE id = ?""",
+                (next_stage, progress, utc_now(), job_id),
             )
         updated = self.get(job_id)
         if updated is None:  # pragma: no cover - protected by the primary key
@@ -481,6 +536,81 @@ class JobStore:
                 (job_id,),
             ).fetchall()
         return [PageRecord(**dict(row)) for row in rows]
+
+    def record_ocr_pages(self, job_id: str, records: Iterable[OcrRecord]) -> Job:
+        """Atomically record exact OCR artifact metadata for every rendered page."""
+
+        job = self.get(job_id)
+        if job is None:
+            raise KeyError(f"Unknown job: {job_id}")
+        if job.state is not JobState.PROCESSING or job.stage != "ocr_processing":
+            raise ValueError("OCR can only be recorded during the OCR processing stage")
+        ocr_pages = list(records)
+        pages = self.list_pages(job_id)
+        page_by_key = {(page.role, page.page_number): page for page in pages}
+        keys = [(record.role, record.page_number) for record in ocr_pages]
+        if len(keys) != len(set(keys)) or set(keys) != set(page_by_key):
+            raise ValueError("OCR metadata must match every rendered page exactly once")
+        for record in ocr_pages:
+            page = page_by_key[(record.role, record.page_number)]
+            if record.job_id != job_id:
+                raise ValueError("OCR metadata does not belong to this job")
+            if record.language != page.language or record.page_sha256 != page.sha256:
+                raise ValueError("OCR provenance does not match its rendered page")
+            if record.mean_confidence is not None and not 0 <= record.mean_confidence <= 1:
+                raise ValueError("OCR confidence must be between 0 and 1")
+
+        with self._connect() as connection:
+            connection.executemany(
+                """INSERT INTO corpus_ocr (
+                    job_id, role, language, page_number, page_sha256, storage_name,
+                    text_sha256, text_size_bytes, character_count, mean_confidence,
+                    engine_name, engine_version, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        record.job_id,
+                        record.role,
+                        record.language,
+                        record.page_number,
+                        record.page_sha256,
+                        record.storage_name,
+                        record.text_sha256,
+                        record.text_size_bytes,
+                        record.character_count,
+                        record.mean_confidence,
+                        record.engine_name,
+                        record.engine_version,
+                        record.created_at,
+                    )
+                    for record in ocr_pages
+                ],
+            )
+            connection.execute(
+                """UPDATE corpus_jobs
+                SET stage = 'ocr_complete', progress = 1, error_code = NULL, updated_at = ?
+                WHERE id = ?""",
+                (utc_now(), job_id),
+            )
+        updated = self.get(job_id)
+        if updated is None:  # pragma: no cover - protected by the foreign key
+            raise RuntimeError("Corpus job disappeared while recording OCR artifacts")
+        return updated
+
+    def list_ocr_pages(self, job_id: str) -> list[OcrRecord]:
+        """Return OCR metadata in language and page order without extracted text."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT job_id, role, language, page_number, page_sha256, storage_name,
+                    text_sha256, text_size_bytes, character_count, mean_confidence,
+                    engine_name, engine_version, created_at
+                FROM corpus_ocr
+                WHERE job_id = ?
+                ORDER BY CASE role WHEN 'source' THEN 0 ELSE 1 END, page_number""",
+                (job_id,),
+            ).fetchall()
+        return [OcrRecord(**dict(row)) for row in rows]
 
     def expire_due(self, now: str | None = None) -> int:
         """Expire non-completed jobs whose retention deadline has passed."""

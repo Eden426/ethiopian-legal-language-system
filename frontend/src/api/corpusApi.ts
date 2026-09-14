@@ -19,6 +19,19 @@ export type CorpusPage = {
   height: number;
 };
 
+export type CorpusOcrPage = {
+  role: "source" | "target";
+  language: "amh_Ethi" | "eng_Latn";
+  page_number: number;
+  page_sha256: string;
+  text_sha256: string;
+  text_size_bytes: number;
+  character_count: number;
+  mean_confidence: number | null;
+  engine_name: string;
+  engine_version: string;
+};
+
 export type CorpusJob = {
   job_id: string;
   state: "created" | "uploaded" | "queued" | "processing" | "review" | "completed" | "failed" | "expired";
@@ -40,6 +53,7 @@ export type CorpusJob = {
   };
   files: CorpusFile[];
   pages: CorpusPage[];
+  ocr_pages: CorpusOcrPage[];
 };
 
 const API_ROOT = "/api";
