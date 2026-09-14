@@ -12,6 +12,7 @@ __pycache__/
 data/raw/**
 data/interim/**
 data/processed/**
+data/artifacts/**
 data/*.db
 data/*.db-shm
 data/*.db-wal

@@ -21,4 +21,3 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if config["model"].get("source_language") == config["model"].get("target_language"):
         raise ValueError("Source and target languages must differ")
     return config
-

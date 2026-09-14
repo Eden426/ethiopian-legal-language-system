@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.corpus.schema import LawType
+
 NON_OFFICIAL_WARNING = "Generated output is non-official and is not legal advice."
 
 
@@ -149,3 +151,57 @@ class AuditEventResponse(ApiModel):
     entity_id: str
     metadata: dict[str, str | int]
     occurred_at: str
+
+
+class CorpusJobCreate(ApiModel):
+    """Create a paired-document job for a supported legal source type."""
+
+    law_type: LawType
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+
+
+class CorpusUploadConstraints(ApiModel):
+    """Public limits needed by the upload interface."""
+
+    max_pdf_bytes: int = Field(ge=1)
+    max_pdf_pages: int = Field(ge=1)
+    accepted_content_types: list[Literal["application/pdf"]] = Field(
+        default_factory=lambda: ["application/pdf"]
+    )
+    source_language: Literal["amh_Ethi"] = "amh_Ethi"
+    target_language: Literal["eng_Latn"] = "eng_Latn"
+
+
+class CorpusFileResponse(ApiModel):
+    """Safe metadata for one privately stored input file."""
+
+    role: Literal["source", "target"]
+    language: Literal["amh_Ethi", "eng_Latn"]
+    original_name: str
+    sha256: str = Field(min_length=64, max_length=64)
+    size_bytes: int = Field(ge=1)
+    page_count: int = Field(ge=1)
+
+
+class CorpusJobResponse(ApiModel):
+    """Corpus job metadata and current upload state."""
+
+    job_id: str
+    state: Literal[
+        "created",
+        "uploaded",
+        "queued",
+        "processing",
+        "review",
+        "completed",
+        "failed",
+        "expired",
+    ]
+    law_type: LawType
+    title: str | None
+    document_id: str | None
+    created_at: str
+    updated_at: str
+    expires_at: str | None
+    upload_constraints: CorpusUploadConstraints
+    files: list[CorpusFileResponse] = Field(default_factory=list)

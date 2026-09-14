@@ -1,1 +1,1 @@
-"""Corpus tests use synthetic, non-sensitive bilingual fixtures only."""
+"""Corpus builder tests use only synthetic, non-sensitive bilingual fixtures."""

@@ -7,14 +7,26 @@ import {
   mockSearch,
   mockTranslate,
 } from "./api/mockApi";
+import {
+  CorpusJob,
+  LawType,
+  createCorpusJob,
+  uploadCorpusFiles,
+} from "./api/corpusApi";
 
-type Workspace = "translate" | "search" | "ask";
+type Workspace = "corpus" | "translate" | "search" | "ask";
 
 const navigation: Array<{ id: Workspace; label: string; description: string }> = [
+  { id: "corpus", label: "Corpus", description: "Paired PDF upload" },
   { id: "translate", label: "Translate", description: "Amharic to English" },
   { id: "search", label: "Search", description: "Bilingual evidence" },
   { id: "ask", label: "Ask", description: "Cited answers" },
 ];
+
+const formatBytes = (bytes: number) => {
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 function BrandMark() {
   return (
@@ -56,6 +68,192 @@ function CitationList({ citations }: { citations: Citation[] }) {
   );
 }
 
+function CorpusBuilderPanel() {
+  const [lawType, setLawType] = useState<LawType>("proclamation");
+  const [title, setTitle] = useState("");
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [targetFile, setTargetFile] = useState<File | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [job, setJob] = useState<CorpusJob | null>(null);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    setJob(null);
+    if (!sourceFile || !targetFile) {
+      setMessage("Choose both the Amharic PDF and the matching English PDF.");
+      return;
+    }
+    if (!confirmed) {
+      setMessage("Confirm that the two files represent the same legal document.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const created = await createCorpusJob(lawType, title);
+      const uploaded = await uploadCorpusFiles(created.job_id, sourceFile, targetFile);
+      setJob(uploaded);
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "The PDFs could not be uploaded.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="corpus-title">
+      <div className="mb-7">
+        <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#9b6c2a]">Workspace 01</p>
+        <h2 id="corpus-title" className="mt-2 text-3xl font-bold tracking-tight text-[#41231B]">
+          Build a parallel corpus
+        </h2>
+        <p className="mt-2 max-w-3xl text-[#6d524a]">
+          Choose a proclamation or book, then upload separate Amharic and English PDFs for the same work.
+          Files stay in private local storage and require contributor review before corpus acceptance.
+        </p>
+      </div>
+
+      <form className="space-y-7" onSubmit={submit}>
+        <fieldset>
+          <legend className="text-sm font-semibold text-[#41231B]">Document type</legend>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {(["proclamation", "book"] as LawType[]).map((option) => (
+              <label
+                className={`cursor-pointer rounded-2xl border p-4 transition ${
+                  lawType === option
+                    ? "border-[#9b6c2a] bg-[#fff5df] ring-2 ring-[#9b6c2a]/15"
+                    : "border-[#9b6c2a]/25 bg-white hover:border-[#9b6c2a]/50"
+                }`}
+                key={option}
+              >
+                <input
+                  checked={lawType === option}
+                  className="mr-3 accent-[#9b6c2a]"
+                  name="law-type"
+                  onChange={() => setLawType(option)}
+                  type="radio"
+                  value={option}
+                />
+                <span className="font-semibold capitalize text-[#41231B]">{option}</span>
+                <span className="mt-1 block pl-7 text-sm text-[#80675f]">
+                  {option === "proclamation"
+                    ? "An official proclamation with a matching translation."
+                    : "A legal book or collection available in both languages."}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-[#41231B]">Title (optional)</span>
+          <input
+            className="w-full rounded-xl border border-[#9b6c2a]/35 bg-white px-4 py-3 text-[#41231B] outline-none focus:border-[#9b6c2a] focus:ring-4 focus:ring-[#9b6c2a]/15"
+            maxLength={300}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Document title or student-team label"
+            value={title}
+          />
+        </label>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <label className="block rounded-2xl border border-dashed border-[#9b6c2a]/45 bg-white p-5">
+            <span className="block font-semibold text-[#41231B]">Amharic source PDF</span>
+            <span className="mt-1 block text-sm text-[#80675f]">Language: amh_Ethi</span>
+            <input
+              accept="application/pdf,.pdf"
+              className="mt-5 block w-full text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-[#41231B] file:px-4 file:py-2.5 file:font-semibold file:text-[#f5e6cf] hover:file:bg-[#583126]"
+              onChange={(event) => setSourceFile(event.target.files?.[0] ?? null)}
+              required
+              type="file"
+            />
+            {sourceFile && (
+              <span className="mt-3 block break-all text-xs text-[#6d524a]">
+                {sourceFile.name} · {formatBytes(sourceFile.size)}
+              </span>
+            )}
+          </label>
+
+          <label className="block rounded-2xl border border-dashed border-[#9b6c2a]/45 bg-white p-5">
+            <span className="block font-semibold text-[#41231B]">English target PDF</span>
+            <span className="mt-1 block text-sm text-[#80675f]">Language: eng_Latn</span>
+            <input
+              accept="application/pdf,.pdf"
+              className="mt-5 block w-full text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-[#41231B] file:px-4 file:py-2.5 file:font-semibold file:text-[#f5e6cf] hover:file:bg-[#583126]"
+              onChange={(event) => setTargetFile(event.target.files?.[0] ?? null)}
+              required
+              type="file"
+            />
+            {targetFile && (
+              <span className="mt-3 block break-all text-xs text-[#6d524a]">
+                {targetFile.name} · {formatBytes(targetFile.size)}
+              </span>
+            )}
+          </label>
+        </div>
+
+        <label className="flex items-start gap-3 rounded-xl bg-[#fffaf1] p-4 text-sm leading-6 text-[#60453d]">
+          <input
+            checked={confirmed}
+            className="mt-1 accent-[#9b6c2a]"
+            onChange={(event) => setConfirmed(event.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            I confirm these are the Amharic and English versions of the same document. OCR and alignment
+            will remain in review until a contributor accepts them.
+          </span>
+        </label>
+
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <p aria-live="assertive" className="text-sm font-medium text-red-800">{message}</p>
+          <button
+            className="rounded-xl bg-[#41231B] px-6 py-3 font-semibold text-[#f5e6cf] shadow-sm transition hover:bg-[#583126] focus:outline-none focus:ring-4 focus:ring-[#9b6c2a]/30 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={loading}
+            type="submit"
+          >
+            {loading ? "Validating and storing…" : "Create job and upload PDFs"}
+          </button>
+        </div>
+      </form>
+
+      {job && (
+        <article aria-live="polite" className="mt-8 rounded-2xl border border-emerald-700/25 bg-emerald-50 p-5">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800">Upload accepted</p>
+          <h3 className="mt-2 text-lg font-bold text-[#41231B]">
+            {job.title || (job.law_type === "book" ? "Untitled book" : "Untitled proclamation")}
+          </h3>
+          <p className="mt-1 text-sm text-[#60453d]">
+            Job <code className="rounded bg-white px-1.5 py-0.5">{job.job_id}</code> is {job.state}.
+          </p>
+          {job.document_id && (
+            <p className="mt-2 break-all text-xs text-[#60453d]">
+              Stable document ID: <code>{job.document_id}</code>
+            </p>
+          )}
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            {job.files.map((file) => (
+              <li className="rounded-xl bg-white p-4 text-sm text-[#60453d]" key={file.role}>
+                <p className="font-semibold text-[#41231B]">
+                  {file.role === "source" ? "Amharic source" : "English target"}
+                </p>
+                <p className="mt-1 break-all">{file.original_name}</p>
+                <p className="mt-1">{file.page_count} pages · {formatBytes(file.size_bytes)}</p>
+                <p className="mt-2 font-mono text-xs">SHA-256 {file.sha256.slice(0, 12)}…</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-sm text-emerald-900">
+            The files are stored locally. Page rendering, OCR, alignment, and human review are the next stages.
+          </p>
+        </article>
+      )}
+    </section>
+  );
+}
+
 function TranslatePanel() {
   const [text, setText] = useState("");
   const [translation, setTranslation] = useState("");
@@ -78,7 +276,7 @@ function TranslatePanel() {
   return (
     <section aria-labelledby="translate-title">
       <div className="mb-7">
-        <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#9b6c2a]">Workspace 01</p>
+        <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#9b6c2a]">Workspace 02</p>
         <h2 id="translate-title" className="mt-2 text-3xl font-bold tracking-tight text-[#41231B]">
           Amharic to English
         </h2>
@@ -146,7 +344,7 @@ function SearchPanel() {
 
   return (
     <section aria-labelledby="search-title">
-      <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#9b6c2a]">Workspace 02</p>
+      <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#9b6c2a]">Workspace 03</p>
       <h2 id="search-title" className="mt-2 text-3xl font-bold tracking-tight text-[#41231B]">
         Bilingual evidence search
       </h2>
@@ -215,7 +413,7 @@ function AskPanel() {
 
   return (
     <section aria-labelledby="ask-title">
-      <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#9b6c2a]">Workspace 03</p>
+      <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#9b6c2a]">Workspace 04</p>
       <h2 id="ask-title" className="mt-2 text-3xl font-bold tracking-tight text-[#41231B]">
         Ask with evidence
       </h2>
@@ -249,7 +447,7 @@ function AskPanel() {
 }
 
 export default function App() {
-  const [workspace, setWorkspace] = useState<Workspace>("translate");
+  const [workspace, setWorkspace] = useState<Workspace>("corpus");
 
   return (
     <div className="min-h-screen bg-[#f5e6cf] text-[#41231B]">
@@ -264,7 +462,7 @@ export default function App() {
           </div>
           <div className="hidden items-center gap-2 rounded-full border border-[#f5e6cf]/20 px-3 py-1.5 text-xs sm:flex">
             <span className="size-2 rounded-full bg-[#d2a75e]" aria-hidden="true" />
-            Mock services active
+            Corpus upload connected
           </div>
         </div>
       </header>
@@ -272,7 +470,7 @@ export default function App() {
       <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[250px_1fr] lg:px-8 lg:py-10">
         <aside className="rounded-2xl bg-[#41231B] p-3 text-[#f5e6cf] shadow-xl lg:min-h-[680px]">
           <p className="px-3 pb-3 pt-2 text-xs font-bold uppercase tracking-[0.18em] text-[#d8b77d]">Tools</p>
-          <nav aria-label="Primary tools" className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
+          <nav aria-label="Primary tools" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
             {navigation.map((item, index) => {
               const active = workspace === item.id;
               return (
@@ -293,15 +491,18 @@ export default function App() {
             })}
           </nav>
           <div className="mt-5 border-t border-white/15 px-3 pt-5 text-xs leading-5 text-[#f5e6cf]/70">
-            Corpus Builder follows after the MT and RAG foundation.
+            The corpus builder is the first delivery priority. Only reviewed alignments can be exported.
           </div>
         </aside>
 
         <main className="min-w-0 rounded-2xl border border-[#9b6c2a]/20 bg-[#fffdf8] p-5 shadow-xl sm:p-8 lg:p-10">
           <Notice>
-            This interface currently uses fabricated mock responses. Generated output is non-official and is not legal advice.
+            {workspace === "corpus"
+              ? "Uploads are private local research inputs. Extracted or aligned text is not official and requires contributor review."
+              : "Translate, Search, and Ask currently use fabricated mock responses. Generated output is non-official and is not legal advice."}
           </Notice>
           <div className="mt-8">
+            {workspace === "corpus" && <CorpusBuilderPanel />}
             {workspace === "translate" && <TranslatePanel />}
             {workspace === "search" && <SearchPanel />}
             {workspace === "ask" && <AskPanel />}
