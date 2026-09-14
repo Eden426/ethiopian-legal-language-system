@@ -195,6 +195,21 @@ class CorpusPageResponse(ApiModel):
     height: int = Field(ge=1)
 
 
+class CorpusOcrResponse(ApiModel):
+    """Content-safe metadata for one private original OCR artifact."""
+
+    role: Literal["source", "target"]
+    language: Literal["amh_Ethi", "eng_Latn"]
+    page_number: int = Field(ge=1)
+    page_sha256: str = Field(min_length=64, max_length=64)
+    text_sha256: str = Field(min_length=64, max_length=64)
+    text_size_bytes: int = Field(ge=0)
+    character_count: int = Field(ge=0)
+    mean_confidence: float | None = Field(default=None, ge=0, le=1)
+    engine_name: str
+    engine_version: str
+
+
 class CorpusJobResponse(ApiModel):
     """Corpus job metadata, progress, and content-safe artifact state."""
 
@@ -221,3 +236,4 @@ class CorpusJobResponse(ApiModel):
     upload_constraints: CorpusUploadConstraints
     files: list[CorpusFileResponse] = Field(default_factory=list)
     pages: list[CorpusPageResponse] = Field(default_factory=list)
+    ocr_pages: list[CorpusOcrResponse] = Field(default_factory=list)

@@ -65,3 +65,14 @@ class ArtifactStorage:
         pages_dir = self.create_job_layout(job_id) / "pages" / role
         pages_dir.mkdir(exist_ok=True)
         return pages_dir / f"{page_number:06d}.png"
+
+    def ocr_path(self, job_id: str, role: str, page_number: int) -> Path:
+        """Return an application-owned path for exact original OCR text."""
+
+        if role not in {"source", "target"}:
+            raise ValueError("OCR role must be source or target")
+        if page_number < 1 or page_number > 999_999:
+            raise ValueError("Page number must be between 1 and 999999")
+        ocr_dir = self.create_job_layout(job_id) / "ocr" / role
+        ocr_dir.mkdir(exist_ok=True)
+        return ocr_dir / f"{page_number:06d}.txt"

@@ -127,14 +127,13 @@ checkpoints must remain outside Git.
 
 ## Current status
 
-**Foundation, canonical corpus contract, paired-PDF upload, and ordered page rendering implemented.** The React/Vite
-application shell, FastAPI health check and typed contracts, safe configuration, legacy JSONL
-validation and migration, local conversation history, strict canonical row schema, stable ID
-rules, private upload storage, background rendering progress, and per-page checksums are
-implemented. A contributor can select `proclamation` or `book`, create a corpus job, and upload
-separate Amharic and English PDFs. OCR, alignment review, export, translation model loading, and a
-production retrieval index are not yet implemented. No dataset, training, or accuracy result is
-claimed.
+**Corpus schema, paired-PDF upload, ordered page rendering, and bilingual OCR implemented.** The
+React/Vite application shell, FastAPI typed contracts, safe configuration, legacy JSONL migration,
+local conversation history, stable IDs, private storage, rendering checksums, and replaceable
+Amharic/English OCR are implemented. A contributor can select `proclamation` or `book`, upload
+the two language PDFs, and monitor rendering and OCR. Normalization, alignment review, export,
+translation model loading, and a production retrieval index are not yet implemented. No dataset,
+training, OCR-accuracy, or translation-accuracy result is claimed.
 
 ## Backend setup
 
@@ -183,6 +182,7 @@ ELLS_ARTIFACT_RETENTION_DAYS=30
 ELLS_MAX_PDF_BYTES=52428800
 ELLS_MAX_PDF_PAGES=500
 ELLS_PDF_RENDER_DPI=200
+ELLS_OCR_CONFIG=configs/ocr.yaml
 ```
 
 Page rendering uses `pdf2image` and requires Poppler's `pdfinfo` and `pdftoppm` commands.
@@ -190,13 +190,20 @@ If they are not on `PATH`, set `ELLS_POPPLER_PATH` to Poppler's binary directory
 be between 72 and 600. FastAPI background tasks are suitable for this local prototype but are not
 a durable production queue: a process restart can interrupt active work.
 
+OCR uses the versioned `configs/ocr.yaml` settings and a replaceable provider interface. The
+default provider is local Tesseract and requires both the `amh` and `eng` language packs. It
+processes one page at a time and stores exact UTF-8 provider output under the ignored private
+artifact root. SQLite records the source-page checksum, output checksum, byte/character counts,
+mean word confidence, language, and engine version. OCR output remains unreviewed research data;
+it is neither normalized nor accepted automatically.
+
 The upload endpoints are:
 
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /v1/corpus/jobs` | Create a `proclamation` or `book` job and return upload limits |
 | `POST /v1/corpus/jobs/{id}/files` | Store the paired PDFs and queue bounded page rendering |
-| `GET /v1/corpus/jobs/{id}` | Read stage, progress, safe errors, and file/page checksum metadata |
+| `GET /v1/corpus/jobs/{id}` | Read stage, progress, safe errors, and file/page/OCR metadata |
 
 Supabase is not required for the local MVP. SQLite and private local files remain the planned
 storage boundary until authentication, public hosting, or multi-user access is approved.
@@ -236,10 +243,12 @@ authentication, ownership checks, a documented retention policy, and an authoriz
 
 ## What to do next
 
-1. Review `feature/pdf-ingestion` for private artifact handling, ordered page metadata, and
-   background-task failure behavior.
-2. Merge the ingestion branch through a reviewed pull request.
-3. Begin A1-05 with replaceable Amharic and English OCR providers over the stored page images.
+1. Review the stacked `feature/pdf-ingestion` and `feature/bilingual-ocr` changes, including
+   private artifact handling, exact Unicode preservation, and safe failure behavior.
+2. Run a student-reviewed smoke check on a clearly public bilingual legal sample and record its
+   provenance without committing the document or treating the OCR as accepted.
+3. Merge reviewed branches in dependency order, then begin A1-06 non-destructive normalization and
+   explainable alignment proposals.
 
 The complete Project 3 checklist is in [PLAN.md](PLAN.md#8-how-to-finish-project-3).
 

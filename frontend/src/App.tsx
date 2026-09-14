@@ -80,8 +80,8 @@ function CorpusBuilderPanel() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!job || job.state === "failed" || job.stage === "pages_rendered") return;
-    if (job.state !== "queued" && job.stage !== "page_rendering") return;
+    if (!job || job.state === "failed" || job.stage === "ocr_complete") return;
+    if (job.state !== "queued" && job.state !== "processing") return;
     const timer = window.setInterval(() => {
       void getCorpusJob(job.job_id)
         .then(setJob)
@@ -270,9 +270,11 @@ function CorpusBuilderPanel() {
             </p>
           ) : (
             <p className="mt-4 text-sm text-emerald-900">
-              {job.stage === "pages_rendered"
-                ? `${job.pages.length} ordered page images are ready for OCR. OCR and alignment still require contributor review.`
-                : "The files are stored locally and page rendering is running in the background."}
+              {job.stage === "ocr_complete"
+                ? `${job.ocr_pages.length} page-level OCR artifacts are ready for alignment review. The extracted text is still unreviewed.`
+                : job.stage === "pages_rendered"
+                  ? `${job.pages.length} ordered page images are ready and OCR is starting.`
+                  : "Private page rendering and bilingual OCR are running in the background."}
             </p>
           )}
         </article>

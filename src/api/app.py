@@ -1,7 +1,9 @@
 """FastAPI application for the local MVP."""
 
+import os
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile, status
@@ -17,6 +19,7 @@ from src.api.contracts import (
     CorpusFileResponse,
     CorpusJobCreate,
     CorpusJobResponse,
+    CorpusOcrResponse,
     CorpusPageResponse,
     CorpusUploadConstraints,
     ErrorResponse,
@@ -39,6 +42,7 @@ from src.corpus.ingestion import (
     process_render_job,
     store_upload_pair,
 )
+from src.corpus.ocr import OcrProvider, TesseractConfig, TesseractOcrProvider, process_ocr_job
 from src.history import ConversationNotFoundError, HistoryStore
 
 
@@ -103,10 +107,19 @@ def get_page_renderer() -> PageRenderer:
     return Pdf2ImageRenderer(RenderConfig.from_env())
 
 
+@lru_cache(maxsize=1)
+def get_ocr_provider() -> OcrProvider:
+    """Return the configured offline bilingual OCR provider."""
+
+    config_path = Path(os.getenv("ELLS_OCR_CONFIG", "configs/ocr.yaml"))
+    return TesseractOcrProvider(TesseractConfig.from_yaml(config_path))
+
+
 JobStoreDependency = Annotated[JobStore, Depends(get_job_store)]
 ArtifactStorageDependency = Annotated[ArtifactStorage, Depends(get_artifact_storage)]
 UploadLimitsDependency = Annotated[UploadLimits, Depends(get_upload_limits)]
 PageRendererDependency = Annotated[PageRenderer, Depends(get_page_renderer)]
+OcrProviderDependency = Annotated[OcrProvider, Depends(get_ocr_provider)]
 
 
 def _not_found(conversation_id: str) -> HTTPException:
@@ -157,6 +170,21 @@ def _corpus_job_response(
         )
         for record in store.list_pages(job.id)
     ]
+    ocr_pages = [
+        CorpusOcrResponse(
+            role=record.role,
+            language=record.language,
+            page_number=record.page_number,
+            page_sha256=record.page_sha256,
+            text_sha256=record.text_sha256,
+            text_size_bytes=record.text_size_bytes,
+            character_count=record.character_count,
+            mean_confidence=record.mean_confidence,
+            engine_name=record.engine_name,
+            engine_version=record.engine_version,
+        )
+        for record in store.list_ocr_pages(job.id)
+    ]
     return CorpusJobResponse(
         job_id=job.id,
         state=job.state.value,
@@ -175,6 +203,7 @@ def _corpus_job_response(
         ),
         files=files,
         pages=pages,
+        ocr_pages=ocr_pages,
     )
 
 
@@ -244,6 +273,7 @@ def upload_corpus_files(
     storage: ArtifactStorageDependency,
     limits: UploadLimitsDependency,
     renderer: PageRendererDependency,
+    ocr_provider: OcrProviderDependency,
 ) -> CorpusJobResponse:
     """Validate and privately store an Amharic/English PDF pair."""
 
@@ -295,6 +325,13 @@ def upload_corpus_files(
         storage=storage,
         store=store,
         renderer=renderer,
+    )
+    background_tasks.add_task(
+        process_ocr_job,
+        job.id,
+        storage=storage,
+        store=store,
+        provider=ocr_provider,
     )
     return _corpus_job_response(job, store, limits)
 
