@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from src.api.contracts import (
@@ -17,6 +17,7 @@ from src.api.contracts import (
     CorpusFileResponse,
     CorpusJobCreate,
     CorpusJobResponse,
+    CorpusPageResponse,
     CorpusUploadConstraints,
     ErrorResponse,
     MessageCreate,
@@ -27,9 +28,17 @@ from src.api.contracts import (
     TranslationResponse,
 )
 from src.common.artifact_storage import ArtifactStorage, ArtifactStorageConfig
-from src.common.job_store import Job, JobStore
+from src.common.job_store import Job, JobState, JobStore
 from src.common.settings import load_app_settings
-from src.corpus.ingestion import PdfUploadError, UploadLimits, store_upload_pair
+from src.corpus.ingestion import (
+    PageRenderer,
+    Pdf2ImageRenderer,
+    PdfUploadError,
+    RenderConfig,
+    UploadLimits,
+    process_render_job,
+    store_upload_pair,
+)
 from src.history import ConversationNotFoundError, HistoryStore
 
 
@@ -87,9 +96,17 @@ def get_upload_limits() -> UploadLimits:
     return UploadLimits.from_env()
 
 
+@lru_cache(maxsize=1)
+def get_page_renderer() -> PageRenderer:
+    """Return the configured bounded PDF page renderer."""
+
+    return Pdf2ImageRenderer(RenderConfig.from_env())
+
+
 JobStoreDependency = Annotated[JobStore, Depends(get_job_store)]
 ArtifactStorageDependency = Annotated[ArtifactStorage, Depends(get_artifact_storage)]
 UploadLimitsDependency = Annotated[UploadLimits, Depends(get_upload_limits)]
+PageRendererDependency = Annotated[PageRenderer, Depends(get_page_renderer)]
 
 
 def _not_found(conversation_id: str) -> HTTPException:
@@ -128,9 +145,24 @@ def _corpus_job_response(
         )
         for record in store.list_uploads(job.id)
     ]
+    pages = [
+        CorpusPageResponse(
+            role=record.role,
+            language=record.language,
+            page_number=record.page_number,
+            sha256=record.sha256,
+            size_bytes=record.size_bytes,
+            width=record.width,
+            height=record.height,
+        )
+        for record in store.list_pages(job.id)
+    ]
     return CorpusJobResponse(
         job_id=job.id,
         state=job.state.value,
+        stage=job.stage,
+        progress=job.progress,
+        error_code=job.error_code,
         law_type=job.law_type,
         title=job.title,
         document_id=job.document_id,
@@ -142,6 +174,7 @@ def _corpus_job_response(
             max_pdf_pages=limits.max_pdf_pages,
         ),
         files=files,
+        pages=pages,
     )
 
 
@@ -203,12 +236,14 @@ def get_corpus_job(
 )
 def upload_corpus_files(
     job_id: str,
+    background_tasks: BackgroundTasks,
     source_file: Annotated[UploadFile, File(description="Amharic PDF")],
     target_file: Annotated[UploadFile, File(description="English PDF")],
     confirm_same_document: Annotated[bool, Form()],
     store: JobStoreDependency,
     storage: ArtifactStorageDependency,
     limits: UploadLimitsDependency,
+    renderer: PageRendererDependency,
 ) -> CorpusJobResponse:
     """Validate and privately store an Amharic/English PDF pair."""
 
@@ -248,6 +283,19 @@ def upload_corpus_files(
             ),
             detail={"code": error.code, "message": str(error)},
         ) from error
+    job = store.transition(
+        job.id,
+        JobState.QUEUED,
+        stage="page_rendering_queued",
+        progress=0.0,
+    )
+    background_tasks.add_task(
+        process_render_job,
+        job.id,
+        storage=storage,
+        store=store,
+        renderer=renderer,
+    )
     return _corpus_job_response(job, store, limits)
 
 

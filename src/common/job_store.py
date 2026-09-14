@@ -30,7 +30,7 @@ class JobState(str, Enum):
 VALID_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
     JobState.CREATED: frozenset({JobState.UPLOADED, JobState.EXPIRED}),
     JobState.UPLOADED: frozenset({JobState.QUEUED, JobState.EXPIRED}),
-    JobState.QUEUED: frozenset({JobState.PROCESSING, JobState.EXPIRED}),
+    JobState.QUEUED: frozenset({JobState.PROCESSING, JobState.FAILED, JobState.EXPIRED}),
     JobState.PROCESSING: frozenset(
         {JobState.REVIEW, JobState.COMPLETED, JobState.FAILED, JobState.EXPIRED}
     ),
@@ -49,6 +49,9 @@ class Job:
 
     id: str
     state: JobState
+    stage: str
+    progress: float
+    error_code: str | None
     law_type: str
     title: str | None
     document_id: str | None
@@ -73,6 +76,22 @@ class UploadRecord:
     created_at: str
 
 
+@dataclass(frozen=True)
+class PageRecord:
+    """Metadata for one rendered page image without its private local path."""
+
+    job_id: str
+    role: str
+    language: str
+    page_number: int
+    storage_name: str
+    sha256: str
+    size_bytes: int
+    width: int
+    height: int
+    created_at: str
+
+
 def utc_now() -> str:
     """Return an ISO-8601 UTC timestamp."""
 
@@ -80,7 +99,7 @@ def utc_now() -> str:
 
 
 class JobStore:
-    """Small SQLite repository for corpus jobs and uploaded-file metadata."""
+    """Small SQLite repository for corpus jobs and private artifact metadata."""
 
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = Path(database_path)
@@ -108,6 +127,9 @@ class JobStore:
                 """CREATE TABLE IF NOT EXISTS corpus_jobs (
                     id TEXT PRIMARY KEY,
                     state TEXT NOT NULL,
+                    stage TEXT NOT NULL DEFAULT 'awaiting_upload',
+                    progress REAL NOT NULL DEFAULT 0,
+                    error_code TEXT,
                     law_type TEXT NOT NULL DEFAULT 'proclamation',
                     title TEXT,
                     document_id TEXT,
@@ -120,15 +142,19 @@ class JobStore:
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(corpus_jobs)").fetchall()
             }
-            if "law_type" not in columns:
-                connection.execute(
-                    "ALTER TABLE corpus_jobs ADD COLUMN law_type TEXT NOT NULL "
-                    "DEFAULT 'proclamation'"
-                )
-            if "title" not in columns:
-                connection.execute("ALTER TABLE corpus_jobs ADD COLUMN title TEXT")
-            if "document_id" not in columns:
-                connection.execute("ALTER TABLE corpus_jobs ADD COLUMN document_id TEXT")
+            migrations = {
+                "stage": "TEXT NOT NULL DEFAULT 'awaiting_upload'",
+                "progress": "REAL NOT NULL DEFAULT 0",
+                "error_code": "TEXT",
+                "law_type": "TEXT NOT NULL DEFAULT 'proclamation'",
+                "title": "TEXT",
+                "document_id": "TEXT",
+            }
+            for name, declaration in migrations.items():
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE corpus_jobs ADD COLUMN {name} {declaration}"
+                    )
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS corpus_uploads (
@@ -148,6 +174,24 @@ class JobStore:
 
                 CREATE INDEX IF NOT EXISTS corpus_uploads_job
                     ON corpus_uploads(job_id, role);
+
+                CREATE TABLE IF NOT EXISTS corpus_pages (
+                    job_id TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK (role IN ('source', 'target')),
+                    language TEXT NOT NULL CHECK (language IN ('amh_Ethi', 'eng_Latn')),
+                    page_number INTEGER NOT NULL CHECK (page_number > 0),
+                    storage_name TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+                    width INTEGER NOT NULL CHECK (width > 0),
+                    height INTEGER NOT NULL CHECK (height > 0),
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, role, page_number),
+                    FOREIGN KEY (job_id, role) REFERENCES corpus_uploads(job_id, role)
+                );
+
+                CREATE INDEX IF NOT EXISTS corpus_pages_job
+                    ON corpus_pages(job_id, role, page_number);
                 """
             )
 
@@ -167,6 +211,9 @@ class JobStore:
         job = Job(
             id=uuid.uuid4().hex,
             state=JobState.CREATED,
+            stage="awaiting_upload",
+            progress=0.0,
+            error_code=None,
             law_type=law_type,
             title=cleaned_title or None,
             document_id=None,
@@ -177,12 +224,15 @@ class JobStore:
         with self._connect() as connection:
             connection.execute(
                 """INSERT INTO corpus_jobs (
-                    id, state, law_type, title, document_id,
+                    id, state, stage, progress, error_code, law_type, title, document_id,
                     created_at, updated_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     job.id,
                     job.state.value,
+                    job.stage,
+                    job.progress,
+                    job.error_code,
                     job.law_type,
                     job.title,
                     job.document_id,
@@ -198,8 +248,8 @@ class JobStore:
 
         with self._connect() as connection:
             row = connection.execute(
-                """SELECT id, state, law_type, title, document_id,
-                    created_at, updated_at, expires_at
+                """SELECT id, state, stage, progress, error_code, law_type, title,
+                    document_id, created_at, updated_at, expires_at
                 FROM corpus_jobs WHERE id = ?""",
                 (job_id,),
             ).fetchone()
@@ -208,6 +258,9 @@ class JobStore:
         return Job(
             id=row["id"],
             state=JobState(row["state"]),
+            stage=row["stage"],
+            progress=float(row["progress"]),
+            error_code=row["error_code"],
             law_type=row["law_type"],
             title=row["title"],
             document_id=row["document_id"],
@@ -216,7 +269,15 @@ class JobStore:
             expires_at=row["expires_at"],
         )
 
-    def transition(self, job_id: str, new_state: JobState) -> Job:
+    def transition(
+        self,
+        job_id: str,
+        new_state: JobState,
+        *,
+        stage: str | None = None,
+        progress: float | None = None,
+        error_code: str | None = None,
+    ) -> Job:
         """Move a job through one allowed lifecycle transition."""
 
         job = self.get(job_id)
@@ -225,15 +286,48 @@ class JobStore:
         new_state = JobState(new_state)
         if new_state not in VALID_TRANSITIONS[job.state]:
             raise ValueError(f"Invalid job transition: {job.state.value} -> {new_state.value}")
+        next_progress = job.progress if progress is None else progress
+        if not 0.0 <= next_progress <= 1.0:
+            raise ValueError("Job progress must be between 0 and 1")
+        next_stage = stage or new_state.value
         updated_at = utc_now()
         with self._connect() as connection:
             connection.execute(
-                "UPDATE corpus_jobs SET state = ?, updated_at = ? WHERE id = ?",
-                (new_state.value, updated_at, job_id),
+                """UPDATE corpus_jobs
+                SET state = ?, stage = ?, progress = ?, error_code = ?, updated_at = ?
+                WHERE id = ?""",
+                (
+                    new_state.value,
+                    next_stage,
+                    next_progress,
+                    error_code,
+                    updated_at,
+                    job_id,
+                ),
             )
         updated = self.get(job_id)
         if updated is None:  # pragma: no cover - protected by the primary key
             raise RuntimeError("Corpus job disappeared during transition")
+        return updated
+
+    def update_processing_progress(self, job_id: str, progress: float) -> Job:
+        """Record bounded rendering progress for a processing job."""
+
+        if not 0.0 <= progress <= 1.0:
+            raise ValueError("Job progress must be between 0 and 1")
+        job = self.get(job_id)
+        if job is None:
+            raise KeyError(f"Unknown job: {job_id}")
+        if job.state is not JobState.PROCESSING:
+            raise ValueError("Progress can only be updated for a processing job")
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE corpus_jobs SET progress = ?, updated_at = ? WHERE id = ?",
+                (progress, utc_now(), job_id),
+            )
+        updated = self.get(job_id)
+        if updated is None:  # pragma: no cover - protected by the primary key
+            raise RuntimeError("Corpus job disappeared while recording progress")
         return updated
 
     def record_upload_pair(
@@ -283,9 +377,16 @@ class JobStore:
             )
             connection.execute(
                 """UPDATE corpus_jobs
-                SET state = ?, document_id = ?, updated_at = ?
+                SET state = ?, stage = ?, progress = 0, error_code = NULL,
+                    document_id = ?, updated_at = ?
                 WHERE id = ?""",
-                (JobState.UPLOADED.value, document_id, updated_at, job_id),
+                (
+                    JobState.UPLOADED.value,
+                    "upload_validated",
+                    document_id,
+                    updated_at,
+                    job_id,
+                ),
             )
         updated = self.get(job_id)
         if updated is None:  # pragma: no cover - protected by the foreign key
@@ -306,16 +407,92 @@ class JobStore:
             ).fetchall()
         return [UploadRecord(**dict(row)) for row in rows]
 
+    def record_rendered_pages(self, job_id: str, records: Iterable[PageRecord]) -> Job:
+        """Atomically record complete ordered page metadata for a processing job."""
+
+        job = self.get(job_id)
+        if job is None:
+            raise KeyError(f"Unknown job: {job_id}")
+        if job.state is not JobState.PROCESSING:
+            raise ValueError("Pages can only be recorded for a processing job")
+        pages = list(records)
+        if not pages or any(record.job_id != job_id for record in pages):
+            raise ValueError("Rendered page metadata does not belong to this job")
+        keys = [(record.role, record.page_number) for record in pages]
+        if any(role not in UPLOAD_ROLES or number < 1 for role, number in keys):
+            raise ValueError("Rendered page metadata is invalid")
+        if len(keys) != len(set(keys)):
+            raise ValueError("Rendered page metadata contains duplicate page numbers")
+        uploads = self.list_uploads(job_id)
+        expected_keys = {
+            (upload.role, page_number)
+            for upload in uploads
+            for page_number in range(1, upload.page_count + 1)
+        }
+        if set(keys) != expected_keys:
+            raise ValueError("Rendered page metadata must match every validated PDF page")
+        language_by_role = {upload.role: upload.language for upload in uploads}
+        if any(page.language != language_by_role[page.role] for page in pages):
+            raise ValueError("Rendered page language does not match its validated upload")
+
+        with self._connect() as connection:
+            connection.executemany(
+                """INSERT INTO corpus_pages (
+                    job_id, role, language, page_number, storage_name, sha256,
+                    size_bytes, width, height, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        page.job_id,
+                        page.role,
+                        page.language,
+                        page.page_number,
+                        page.storage_name,
+                        page.sha256,
+                        page.size_bytes,
+                        page.width,
+                        page.height,
+                        page.created_at,
+                    )
+                    for page in pages
+                ],
+            )
+            connection.execute(
+                """UPDATE corpus_jobs
+                SET stage = 'pages_rendered', progress = 1, error_code = NULL, updated_at = ?
+                WHERE id = ?""",
+                (utc_now(), job_id),
+            )
+        updated = self.get(job_id)
+        if updated is None:  # pragma: no cover - protected by the foreign key
+            raise RuntimeError("Corpus job disappeared while recording rendered pages")
+        return updated
+
+    def list_pages(self, job_id: str) -> list[PageRecord]:
+        """Return rendered page metadata in language and page order."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT job_id, role, language, page_number, storage_name, sha256,
+                    size_bytes, width, height, created_at
+                FROM corpus_pages
+                WHERE job_id = ?
+                ORDER BY CASE role WHEN 'source' THEN 0 ELSE 1 END, page_number""",
+                (job_id,),
+            ).fetchall()
+        return [PageRecord(**dict(row)) for row in rows]
+
     def expire_due(self, now: str | None = None) -> int:
         """Expire non-completed jobs whose retention deadline has passed."""
 
         cutoff = now or utc_now()
         with self._connect() as connection:
             cursor = connection.execute(
-                """UPDATE corpus_jobs SET state = ?, updated_at = ?
+                """UPDATE corpus_jobs SET state = ?, stage = ?, updated_at = ?
                    WHERE expires_at IS NOT NULL AND expires_at <= ?
                      AND state NOT IN (?, ?)""",
                 (
+                    JobState.EXPIRED.value,
                     JobState.EXPIRED.value,
                     cutoff,
                     cutoff,

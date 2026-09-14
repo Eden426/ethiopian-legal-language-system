@@ -127,13 +127,14 @@ checkpoints must remain outside Git.
 
 ## Current status
 
-**Foundation, draft canonical corpus contract, and paired-PDF upload implemented.** The React/Vite
+**Foundation, canonical corpus contract, paired-PDF upload, and ordered page rendering implemented.** The React/Vite
 application shell, FastAPI health check and typed contracts, safe configuration, legacy JSONL
 validation and migration, local conversation history, strict canonical row schema, stable ID
-rules, and private upload storage are implemented. A contributor can select `proclamation` or
-`book`, create a corpus job, and upload separate Amharic and English PDFs. Page rendering, OCR,
-alignment review, export, translation model loading, and a production retrieval index are not yet
-implemented. No dataset, training, or accuracy result is claimed.
+rules, private upload storage, background rendering progress, and per-page checksums are
+implemented. A contributor can select `proclamation` or `book`, create a corpus job, and upload
+separate Amharic and English PDFs. OCR, alignment review, export, translation model loading, and a
+production retrieval index are not yet implemented. No dataset, training, or accuracy result is
+claimed.
 
 ## Backend setup
 
@@ -168,8 +169,11 @@ The local frontend runs at `http://localhost:5173`; the API health endpoint is
 Open the **Corpus** workspace, choose **Proclamation** or **Book**, and select the matching Amharic
 and English PDFs. The API validates the filename, PDF media type and signature, readable page count,
 configured size/page limits, and that the two language files are not identical. Accepted files are
-stored under the ignored private artifact root with SHA-256 metadata in local SQLite; file content
-and local paths are not returned by the API.
+stored under the ignored private artifact root with SHA-256 metadata in local SQLite. The upload
+queues a FastAPI background task that renders one page at a time into ordered PNG files, records
+each page's language, dimensions, byte count, and SHA-256 checksum, and updates content-safe
+`stage`, `progress`, and `error_code` fields. File content and local paths are not returned by
+the API, and a rendering failure removes partial page images without changing the original PDFs.
 
 The configurable per-file defaults are 50 MiB and 500 pages:
 
@@ -178,15 +182,21 @@ ELLS_ARTIFACT_ROOT=data/artifacts
 ELLS_ARTIFACT_RETENTION_DAYS=30
 ELLS_MAX_PDF_BYTES=52428800
 ELLS_MAX_PDF_PAGES=500
+ELLS_PDF_RENDER_DPI=200
 ```
+
+Page rendering uses `pdf2image` and requires Poppler's `pdfinfo` and `pdftoppm` commands.
+If they are not on `PATH`, set `ELLS_POPPLER_PATH` to Poppler's binary directory. The DPI must
+be between 72 and 600. FastAPI background tasks are suitable for this local prototype but are not
+a durable production queue: a process restart can interrupt active work.
 
 The upload endpoints are:
 
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /v1/corpus/jobs` | Create a `proclamation` or `book` job and return upload limits |
-| `POST /v1/corpus/jobs/{id}/files` | Store one Amharic PDF and one English PDF after validation |
-| `GET /v1/corpus/jobs/{id}` | Read job state, checksums, page counts, and safe file metadata |
+| `POST /v1/corpus/jobs/{id}/files` | Store the paired PDFs and queue bounded page rendering |
+| `GET /v1/corpus/jobs/{id}` | Read stage, progress, safe errors, and file/page checksum metadata |
 
 Supabase is not required for the local MVP. SQLite and private local files remain the planned
 storage boundary until authentication, public hosting, or multi-user access is approved.
@@ -226,11 +236,10 @@ authentication, ownership checks, a documented retention policy, and an authoriz
 
 ## What to do next
 
-1. Have another student contributor review `feature/corpus-schema`, especially acceptance rules and
-   the unresolved legacy-document policy.
-2. Merge the schema through a reviewed pull request.
-3. Update `feature/paired-pdf-upload` with the approved schema and review A1-02/A1-03.
-4. Begin A1-04 ordered page rendering only after those reviews pass.
+1. Review `feature/pdf-ingestion` for private artifact handling, ordered page metadata, and
+   background-task failure behavior.
+2. Merge the ingestion branch through a reviewed pull request.
+3. Begin A1-05 with replaceable Amharic and English OCR providers over the stored page images.
 
 The complete Project 3 checklist is in [PLAN.md](PLAN.md#8-how-to-finish-project-3).
 

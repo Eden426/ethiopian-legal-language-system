@@ -12,11 +12,13 @@ from src.api.app import (
     app,
     get_artifact_storage,
     get_job_store,
+    get_page_renderer,
     get_upload_limits,
 )
 from src.common.artifact_storage import ArtifactStorage, ArtifactStorageConfig
 from src.common.job_store import JobStore
 from src.corpus.ingestion import UploadLimits
+from src.corpus.ingestion.rendering import RenderedPage
 from src.corpus.schema import LawType, make_document_id
 
 
@@ -29,6 +31,22 @@ def _pdf_bytes(*, pages: int = 1, width: int = 200) -> bytes:
     return output.getvalue()
 
 
+class FakeRenderer:
+    """Offline renderer fixture with deterministic synthetic PNG bytes."""
+
+    def render(self, pdf_path: Path, expected_pages: int) -> list[RenderedPage]:
+        role_marker = b"S" if pdf_path.stem == "source" else b"T"
+        return [
+            RenderedPage(
+                page_number=page_number,
+                png_bytes=b"\x89PNG\r\n\x1a\n" + role_marker + bytes([page_number]),
+                width=100 + page_number,
+                height=200 + page_number,
+            )
+            for page_number in range(1, expected_pages + 1)
+        ]
+
+
 @pytest.fixture
 def corpus_client(tmp_path: Path) -> tuple[TestClient, JobStore, ArtifactStorage]:
     store = JobStore(tmp_path / "ells.db")
@@ -37,6 +55,7 @@ def corpus_client(tmp_path: Path) -> tuple[TestClient, JobStore, ArtifactStorage
     app.dependency_overrides[get_job_store] = lambda: store
     app.dependency_overrides[get_artifact_storage] = lambda: storage
     app.dependency_overrides[get_upload_limits] = lambda: limits
+    app.dependency_overrides[get_page_renderer] = FakeRenderer
     with TestClient(app) as client:
         yield client, store, storage
     app.dependency_overrides.clear()
@@ -86,7 +105,8 @@ def test_create_book_job_and_upload_distinct_language_pdfs(
     assert response.status_code == 200
     payload = response.json()
     assert payload["law_type"] == "book"
-    assert payload["state"] == "uploaded"
+    assert payload["state"] == "queued"
+    assert payload["stage"] == "page_rendering_queued"
     assert payload["document_id"].startswith("book-")
     assert [item["language"] for item in payload["files"]] == ["amh_Ethi", "eng_Latn"]
     assert [item["page_count"] for item in payload["files"]] == [1, 1]
@@ -102,6 +122,13 @@ def test_create_book_job_and_upload_distinct_language_pdfs(
         payload["files"][0]["sha256"],
         payload["files"][1]["sha256"],
     )
+    rendered = client.get(f"/v1/corpus/jobs/{job_id}").json()
+    assert rendered["stage"] == "pages_rendered"
+    assert rendered["progress"] == 1.0
+    assert [(page["role"], page["page_number"]) for page in rendered["pages"]] == [
+        ("source", 1),
+        ("target", 1),
+    ]
 
 
 def test_job_status_reports_constraints_without_local_paths(
@@ -115,6 +142,9 @@ def test_job_status_reports_constraints_without_local_paths(
     assert response.status_code == 200
     assert response.json()["law_type"] == "proclamation"
     assert response.json()["state"] == "created"
+    assert response.json()["stage"] == "awaiting_upload"
+    assert response.json()["progress"] == 0.0
+    assert response.json()["error_code"] is None
     assert response.json()["document_id"] is None
     assert response.json()["upload_constraints"] == {
         "max_pdf_bytes": 1024 * 1024,
