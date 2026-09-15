@@ -1,4 +1,8 @@
-from src.corpus.normalization.text import clean_text, recover_ethiopic_numerals, is_valid_amharic_line
+from src.corpus.normalization.text import (
+    clean_text,
+    is_valid_amharic_line,
+    recover_ethiopic_numerals,
+)
 
 
 def test_clean_text_keeps_amharic_and_english():

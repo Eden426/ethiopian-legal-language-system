@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 from pathlib import Path
-from typing import Any
 
 import cv2
 import numpy as np
@@ -90,7 +88,7 @@ def remove_boxes_from_image(pil_image: Image.Image) -> Image.Image:
         epsilon = 0.02 * cv2.arcLength(cnt, True)
         approx = cv2.approxPolyDP(cnt, epsilon, True)
         if len(approx) == 4 and cv2.isContourConvex(approx):
-            x, y, w, h = cv2.boundingRect(approx)
+            _, _, w, h = cv2.boundingRect(approx)
             if w > 100 and h > 30:
                 fill = (255, 255, 255) if len(img.shape) == 3 else 255
                 cv2.drawContours(img, [approx], -1, fill, -1)

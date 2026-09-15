@@ -8,15 +8,8 @@ from typing import Any
 from tqdm import tqdm
 
 from src.corpus.config import CorpusConfig
+from src.corpus.export.json_export import write_legacy_json
 from src.corpus.ingestion.pdf import pdf_to_images
-from src.corpus.ocr.tesseract import (
-    crop_first_page_title,
-    ocr_image,
-    preprocess_image,
-    remove_boxes_from_image,
-    remove_header_footer,
-    split_columns,
-)
 from src.corpus.normalization.text import (
     clean_text,
     is_valid_amharic_line,
@@ -25,7 +18,14 @@ from src.corpus.normalization.text import (
     remove_closing_section,
     split_paragraphs,
 )
-from src.corpus.export.json_export import write_legacy_json
+from src.corpus.ocr.tesseract import (
+    crop_first_page_title,
+    ocr_image,
+    preprocess_image,
+    remove_boxes_from_image,
+    remove_header_footer,
+    split_columns,
+)
 
 
 def extract_pdf_to_json(pdf_path: Path, output_file: Path, config: CorpusConfig, logger: logging.Logger) -> bool:
@@ -65,7 +65,7 @@ def extract_pdf_to_json(pdf_path: Path, output_file: Path, config: CorpusConfig,
                 "amharic": merge_paragraphs(am_paragraphs),
                 "english": merge_paragraphs(en_paragraphs),
             })
-        except Exception as exc:
+        except Exception:
             logger.exception("Error processing page %d of %s", page_number, pdf_path.name)
             results.append({"page_number": page_number, "amharic": "", "english": ""})
 

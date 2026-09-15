@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Allow `python scripts/corpus/extract.py` from repository root.
@@ -12,14 +12,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.corpus.config import load_config
+from src.corpus.export.manifest import write_manifest
 from src.corpus.ingestion.pdf import find_pdf_files
 from src.corpus.ocr.tesseract import validate_environment
 from src.corpus.pipeline import extract_pdf_to_json
-from src.corpus.export.manifest import write_manifest
 
 
 def setup_logging(log_dir: Path) -> tuple[logging.Logger, Path]:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     log_file = log_dir / f"extraction_{timestamp}.log"
     logger = logging.getLogger("negarit")
     logger.setLevel(logging.INFO)

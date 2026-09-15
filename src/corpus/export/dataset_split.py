@@ -10,8 +10,9 @@ import json
 import math
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -111,7 +112,7 @@ def _document_signature_text(rows: list[dict[str, Any]]) -> str:
 
 def _stable_order(group: set[str], seed: int) -> tuple[str, str]:
     value = "|".join(sorted(group))
-    digest = hashlib.sha256(f"{seed}:{value}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{seed}:{value}".encode()).hexdigest()
     return digest, value
 
 
@@ -166,8 +167,8 @@ def split_rows(
             result[chosen].extend(doc_rows[document_id])
         counts[chosen] += size
 
-    for split in result:
-        result[split].sort(key=lambda row: (str(row["document_id"]), str(row["id"])))
+    for rows in result.values():
+        rows.sort(key=lambda row: (str(row["document_id"]), str(row["id"])))
 
     validate_document_isolation(result)
     return result

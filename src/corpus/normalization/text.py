@@ -35,10 +35,10 @@ def is_valid_amharic_line(line: str) -> bool:
     ratio = len(ethiopic) / max(len(stripped), 1)
     if ratio < 0.20:
         return False
-    if re.search(r"[^\u1200-\u137F0-9\s፡።፣፤፥፦:\.\-\(\)/]", stripped):
-        return False
-    return True
-
+    return re.search(
+    r"[^\u1200-\u137F0-9\s፡።፣፤፥፦:\.\-\(\)/]",
+    stripped,
+) is None
 
 def split_paragraphs(text: str) -> list[str]:
     return [p.strip() for p in re.split(r"\n+", text) if len(p.strip()) > 1]

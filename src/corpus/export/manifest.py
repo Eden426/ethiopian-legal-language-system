@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def sha256_file(path: Path) -> str:

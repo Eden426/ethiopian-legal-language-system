@@ -1,7 +1,7 @@
 """OCR provider interface."""
 from __future__ import annotations
 
-from typing import Protocol, Any
+from typing import Any, Protocol
 
 
 class OCRProvider(Protocol):
