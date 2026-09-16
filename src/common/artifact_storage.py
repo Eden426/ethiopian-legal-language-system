@@ -14,7 +14,7 @@ class ArtifactStorageConfig:
     retention_days: int = 30
 
     @classmethod
-    def from_env(cls, base_dir: Path | None = None) -> "ArtifactStorageConfig":
+    def from_env(cls, base_dir: Path | None = None) -> ArtifactStorageConfig:
         base = base_dir or Path.cwd()
         raw_root = os.getenv("ELLS_ARTIFACT_ROOT", str(base / "data" / "artifacts"))
         retention = int(os.getenv("ELLS_ARTIFACT_RETENTION_DAYS", "30"))

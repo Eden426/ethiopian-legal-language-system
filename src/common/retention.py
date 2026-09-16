@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import shutil
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from src.common.artifact_storage import ArtifactStorageConfig
 
