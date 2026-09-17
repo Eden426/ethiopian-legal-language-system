@@ -109,7 +109,7 @@ class JobStore:
             cursor = connection.execute(
                 """UPDATE corpus_jobs SET state = ?, updated_at = ?
                    WHERE expires_at IS NOT NULL AND expires_at <= ?
-                     AND state NOT IN (?, ?)""",
-                (JobState.EXPIRED.value, cutoff, cutoff, JobState.COMPLETED.value, JobState.EXPIRED.value),
+                     AND state != ?""",
+                (JobState.EXPIRED.value, cutoff, cutoff, JobState.EXPIRED.value),
             )
             return cursor.rowcount
