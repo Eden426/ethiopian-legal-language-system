@@ -42,6 +42,14 @@ class SafeJobLoggerAdapter(logging.LoggerAdapter[logging.Logger]):
     )
     BLOCKED_EXTRA = PrivacySafeFormatter.BLOCKED_FIELDS
 
+    def log(self, level: int, msg: Any, *args: Any, **kwargs: Any) -> None:
+        if not self.isEnabledFor(level):
+            return
+        _validate_log_args(args)
+        if _message_mentions_sensitive_content(msg):
+            raise ValueError("Unsafe log message")
+        super().log(level, msg, *args, **kwargs)
+
     def process(self, msg: Any, kwargs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         extra = kwargs.get("extra", {})
         unsafe = set(extra) & self.BLOCKED_EXTRA
@@ -52,10 +60,6 @@ class SafeJobLoggerAdapter(logging.LoggerAdapter[logging.Logger]):
         if unknown:
             field = sorted(unknown)[0]
             raise ValueError(f"Unsafe log field: {field}")
-
-        if _message_mentions_sensitive_content(msg):
-            raise ValueError("Unsafe log message")
-        _validate_log_args(kwargs.get("args", ()))
         return msg, kwargs
 
 
